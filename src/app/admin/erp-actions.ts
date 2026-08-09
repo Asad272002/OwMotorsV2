@@ -338,7 +338,7 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
   const normalizedId: Record<string, unknown> = {
     id: String(raw.movementId ?? raw.id ?? "").trim(),
     decision: String(raw.decision ?? "approved"),
-    rejectionReason: String(raw.rejectionReason ?? "").trim() || null,
+    rejectionReason: String(raw.rejectionReason ?? "").trim(),
   };
 
   const parsed = stockMovementApprovalSchema.safeParse(normalizedId);
@@ -385,7 +385,7 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
         approval_status: "rejected",
         rejected_by: actor.userId,
         rejected_at: nowIso,
-        rejection_reason: (parsed.data.rejectionReason ?? null) as string | null,
+        rejection_reason: (parsed.data.rejectionReason && parsed.data.rejectionReason.length >= 3 ? parsed.data.rejectionReason : null) as string | null,
       };
 
   try {
