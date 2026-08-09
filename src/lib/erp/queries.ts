@@ -104,10 +104,10 @@ export const listStockMovements = cache(async (): Promise<readonly StockMovement
     .select(`
       *,
       variant:motorcycle_variants(
-        id, cc, color_name,
-        motorcycle:motorcycles(name, brand:brands(name))
+        id, cc, color_name, quantity, stock_status,
+        motorcycle:motorcycles(name, brand:brands(id, name, slug))
       ),
-      part:parts(name, sku),
+      part:parts(id, name, sku, current_stock, unit_cost),
       requestor:profiles!stock_movements_requested_by_fkey(full_name, role),
       approver:profiles!stock_movements_approved_by_fkey(full_name, role)
     `)
@@ -126,8 +126,8 @@ export async function getStockMovement(id: string): Promise<StockMovementWithDet
     .from("stock_movements")
     .select(`
       *,
-      variant:motorcycle_variants(id, cc, color_name, motorcycle:motorcycles(name, brand:brands(name))),
-      part:parts(name, sku),
+      variant:motorcycle_variants(id, cc, color_name, quantity, stock_status, motorcycle:motorcycles(name, brand:brands(id, name, slug))),
+      part:parts(id, name, sku, current_stock, unit_cost),
       requestor:profiles!stock_movements_requested_by_fkey(full_name, role),
       approver:profiles!stock_movements_approved_by_fkey(full_name, role)
     `)

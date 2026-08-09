@@ -8,16 +8,25 @@ import { History, PackageOpen, Bike, ShieldCheck } from "lucide-react";
 
 export const metadata = { title: "Stock Changes" };
 
-const typeTone: Record<string, string> = {
-  addition: "in_stock",
-  subtraction: "out_of_stock",
-};
+function formatMovementType(t: string): { label: string; tone: string } {
+  const type = String(t ?? "");
+  const tone = type.endsWith("_add") ? "in_stock" : type.endsWith("_subtract") ? "out_of_stock" : "in_progress";
+  const label = type
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return { label: label || "Movement", tone };
+}
 
-const approvalTone: Record<string, string> = {
-  pending: "new",
-  approved: "completed",
-  rejected: "out_of_stock",
-};
+function formatApprovalStatus(s: string): { label: string; tone: string } {
+  switch (s) {
+    case "pending_approval": return { label: "Pending approval", tone: "new" };
+    case "approved": return { label: "Approved", tone: "completed" };
+    case "rejected": return { label: "Rejected", tone: "out_of_stock" };
+    default: return { label: String(s ?? "Unknown").replaceAll("_", " "), tone: "in_progress" };
+  }
+}
 
 export default async function StockMovementsPage() {
   const actor = await getAuthenticatedProfile();
@@ -39,7 +48,7 @@ export default async function StockMovementsPage() {
       />
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[#111111] text-white"><History aria-hidden="true" className="h-5 w-5" /></span>
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-[#111111]"><History aria-hidden="true" className="h-5 w-5" style={{ color: "#FFFFFF" }} /></span>
           <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B7280]">Total requests</p>
           <p className="mt-2 font-display text-2xl font-bold text-[#111111]">{movements.length}</p>
         </div>
@@ -55,7 +64,7 @@ export default async function StockMovementsPage() {
         </div>
       </section>
 
-      <AdminPanel title="Request new stock change" description="Pick a target (bike variant OR spare part), specify addition or subtraction, and add a reason. Unit cost for additions is set by Admin/Dev automatically (if you leave blank managers need not fill); managers may not change vehicle pricing.">
+      <AdminPanel title="Request new stock change" description="Pick a target (bike variant OR spare part), specify addition or subtraction, and add a reason. Unit cost is set automatically from the Stock Availability page (Managers: leave blank).">
         <AdminForm action={requestStockMovement} submitLabel="Submit for Admin approval →" pendingLabel="Submitting request…" confirmMessage="Submit this stock change for Admin approval?" className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <div>
             <label className={adminLabelClass}>Target type</label>
@@ -85,24 +94,29 @@ export default async function StockMovementsPage() {
             <label className={adminLabelClass}>Motorcycle variant</label>
             <select name="variantId" className={adminInputClass}>
               <option value="">-- None / select above --</option>
-              {variants.map(v => (
-                <option key={v.id} value={v.id}>
-                  {v.motorcycle?.brand?.name} {v.motorcycle?.name} · {v.cc}cc · {v.color_name ?? "Color TBD"} · QTY {v.quantity ?? 0}
-                </option>
-              ))}
+              {variants.map(v => {
+                const brandName = v.motorcycle?.brand?.name ? `${v.motorcycle.brand.name} ` : "";
+                const model = v.motorcycle?.name ?? "Motorcycle";
+                const qty = Number(v.quantity ?? 0);
+                return (
+                  <option key={v.id} value={v.id}>
+                    {brandName}{model} · {v.cc}cc · {v.color_name ?? "Color TBD"} · QTY {qty}
+                  </option>
+                );
+              })}
             </select>
           </div>
           <div>
             <label className={adminLabelClass}>Spare part</label>
             <select name="partId" className={adminInputClass}>
               <option value="">-- None / select above --</option>
-              {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.name} (QTY {p.current_stock ?? 0})</option>)}
+              {parts.map(p => <option key={p.id} value={p.id}>{p.sku} — {p.name} (QTY {Number(p.current_stock ?? 0)})</option>)}
             </select>
           </div>
           <div>
             <label className={adminLabelClass}>Unit cost, PKR{isAdminOrDev ? "" : " (auto-filled)"}</label>
-            <input name="unitCost" type="number" min={0} step="0.01" placeholder={isAdminOrDev ? "e.g. 345,000" : "Set on Stock Availability page"} disabled={!isAdminOrDev} className={adminInputClass + (!isAdminOrDev ? " bg-[#F7F7F8] text-[#6B7280]" : "")} />
-            {!isAdminOrDev ? <p className="mt-1 text-[11px] text-[#6B7280]">Pricing is Admin-managed on Stock Availability.</p> : null}
+            <input name="unitCost" type="number" min={0} step="0.01" placeholder={isAdminOrDev ? "e.g. 345000" : "Set on Stock Availability page"} disabled={!isAdminOrDev} className={adminInputClass + (!isAdminOrDev ? " bg-[#F7F7F8] text-[#6B7280]" : "")} />
+            {!isAdminOrDev ? <p className="mt-1 text-[11px] text-[#6B7280]">Admin sets pricing on Stock Availability.</p> : null}
           </div>
           <div className="md:col-span-3">
             <label className={adminLabelClass}>Reason / attachment reference</label>
@@ -132,26 +146,37 @@ export default async function StockMovementsPage() {
             <tbody className="divide-y divide-[#E5E7EB]">
               {movements.length === 0 ? (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-[#6B7280]">No stock change requests yet.</td></tr>
-              ) : movements.map(m => (
-                <tr key={m.id} className="hover:bg-[#FAFAFA] align-top">
-                  <td className="px-4 py-3 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-xs">
-                    {m.variant
-                      ? <span className="inline-flex items-center gap-1"><Bike aria-hidden="true" className="h-3.5 w-3.5 text-[#C62828]" />{m.variant.motorcycle?.brand?.name} {m.variant.motorcycle?.name} · {m.variant.cc}cc · {m.variant.color_name ?? "TBD"}</span>
-                      : m.part
-                      ? <span className="inline-flex items-center gap-1"><PackageOpen aria-hidden="true" className="h-3.5 w-3.5 text-[#374151]" />{m.part.sku} — {m.part.name}</span>
-                      : "—"}
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge value={typeTone[m.movement_type] ?? "in_progress"} label={String(m.movement_type).replaceAll("_", " ")} /></td>
-                  <td className="px-4 py-3 text-right font-display text-xl font-bold">{String(m.movement_type).endsWith("add") ? "+" : "−"}{m.quantity}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge value={approvalTone[m.approval_status] ?? "in_progress"} label={String(m.approval_status).replaceAll("_", " ")} />
-                    {m.rejection_reason ? <p className="mt-1 text-[10px] text-[#C62828]">Reject reason: {m.rejection_reason}</p> : null}
-                  </td>
-                  <td className="px-4 py-3 text-xs">{m.applied ? <span className="text-[#15803D]">✓ Applied</span> : m.approval_status === "approved" ? <span className="text-[#D97706]">Queued</span> : <span className="text-[#9CA3AF]">—</span>}</td>
-                  <td className="px-4 py-3 text-xs text-[#374151] max-w-md truncate">{m.reason}</td>
-                </tr>
-              ))}
+              ) : movements.map(m => {
+                const { label: typeLabel, tone: typeToneBadge } = formatMovementType(String(m.movement_type));
+                const { label: approvalLabel, tone: approvalToneBadge } = formatApprovalStatus(String(m.approval_status));
+                const variantBrand = m.variant?.motorcycle?.brand?.name ? `${m.variant.motorcycle.brand.name} ` : "";
+                const variantModel = m.variant?.motorcycle?.name ?? "";
+                const targetLabel = m.variant
+                  ? `${variantBrand}${variantModel} · ${m.variant.cc}cc · ${m.variant.color_name ?? "TBD"}`.trim()
+                  : m.part
+                  ? `${m.part.sku ? `${m.part.sku} — ` : ""}${m.part.name ?? "Spare part"}`
+                  : "—";
+                return (
+                  <tr key={m.id} className="hover:bg-[#FAFAFA] align-top">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs">{new Date(m.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {m.variant
+                        ? <span className="inline-flex items-center gap-1"><Bike aria-hidden="true" className="h-3.5 w-3.5 text-[#C62828]" />{targetLabel}</span>
+                        : m.part
+                        ? <span className="inline-flex items-center gap-1"><PackageOpen aria-hidden="true" className="h-3.5 w-3.5 text-[#374151]" />{targetLabel}</span>
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge value={typeToneBadge} label={typeLabel} /></td>
+                    <td className="px-4 py-3 text-right font-display text-xl font-bold">{String(m.movement_type).endsWith("add") ? "+" : "−"}{m.quantity}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge value={approvalToneBadge} label={approvalLabel} />
+                      {m.rejection_reason ? <p className="mt-1 text-[10px] text-[#C62828]">Reject reason: {m.rejection_reason}</p> : null}
+                    </td>
+                    <td className="px-4 py-3 text-xs">{m.applied ? <span className="text-[#15803D]">✓ Applied</span> : m.approval_status === "approved" ? <span className="text-[#D97706]">Queued</span> : <span className="text-[#9CA3AF]">—</span>}</td>
+                    <td className="px-4 py-3 text-xs text-[#374151] max-w-md truncate">{m.reason}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
