@@ -11,9 +11,6 @@ export const metadata = { title: "Stock Changes" };
 const typeTone: Record<string, string> = {
   addition: "in_stock",
   subtraction: "out_of_stock",
-  adjustment: "in_progress",
-  damaged: "needs_attention",
-  returned: "new",
 };
 
 const approvalTone: Record<string, string> = {
@@ -76,10 +73,9 @@ export default async function StockMovementsPage() {
           <div>
             <label className={adminLabelClass}>Movement type</label>
             <select name="movementType" defaultValue="addition" className={adminInputClass}>
-              <option value="addition">Addition (+ incoming shipment, showroom transfer, or showroom new stock intake)</option>
-              <option value="subtraction">Subtraction (− write-off, damages, physical count correction out, or transfers out)</option>
+              <option value="addition">Addition (+)</option>
+              <option value="subtraction">Subtraction (−)</option>
             </select>
-            <p className="mt-1 text-[11px] text-[#6B7280]">Use Addition for stock-in; use Subtraction for any stock-out scenario (damages, write-offs, corrections, returns-out). Add full context in the Reason / Notes field below.</p>
           </div>
           <div>
             <label className={adminLabelClass}>Quantity</label>
@@ -104,9 +100,9 @@ export default async function StockMovementsPage() {
             </select>
           </div>
           <div>
-            <label className={adminLabelClass}>Unit cost, PKR{isAdminOrDev ? " (Admin set)" : " (Managers: leave blank — Admin sets pricing)"}</label>
-            <input name="unitCost" type="number" min={0} step="0.01" placeholder={isAdminOrDev ? "e.g. 345000" : "Pricing set on Stock Availability dashboard"} disabled={!isAdminOrDev} className={adminInputClass + (!isAdminOrDev ? " bg-[#F7F7F8] text-[#6B7280]" : "")} />
-            {!isAdminOrDev ? <p className="mt-1 text-[11px] text-[#6B7280]">Managers cannot adjust motorcycle or parts pricing. Pricing updates are Admin-only on the Stock Availability page.</p> : null}
+            <label className={adminLabelClass}>Unit cost, PKR{isAdminOrDev ? "" : " (auto-filled)"}</label>
+            <input name="unitCost" type="number" min={0} step="0.01" placeholder={isAdminOrDev ? "e.g. 345,000" : "Set on Stock Availability page"} disabled={!isAdminOrDev} className={adminInputClass + (!isAdminOrDev ? " bg-[#F7F7F8] text-[#6B7280]" : "")} />
+            {!isAdminOrDev ? <p className="mt-1 text-[11px] text-[#6B7280]">Pricing is Admin-managed on Stock Availability.</p> : null}
           </div>
           <div className="md:col-span-3">
             <label className={adminLabelClass}>Reason / attachment reference</label>
@@ -147,7 +143,7 @@ export default async function StockMovementsPage() {
                       : "—"}
                   </td>
                   <td className="px-4 py-3"><StatusBadge value={typeTone[m.movement_type] ?? "in_progress"} label={String(m.movement_type).replaceAll("_", " ")} /></td>
-                  <td className="px-4 py-3 text-right font-display text-xl font-bold">{m.movement_type === "addition" || m.movement_type === "returned" ? "+" : "-"}{m.quantity}</td>
+                  <td className="px-4 py-3 text-right font-display text-xl font-bold">{String(m.movement_type).endsWith("add") ? "+" : "−"}{m.quantity}</td>
                   <td className="px-4 py-3">
                     <StatusBadge value={approvalTone[m.approval_status] ?? "in_progress"} label={String(m.approval_status).replaceAll("_", " ")} />
                     {m.rejection_reason ? <p className="mt-1 text-[10px] text-[#C62828]">Reject reason: {m.rejection_reason}</p> : null}

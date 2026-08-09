@@ -251,18 +251,14 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
   function combineMovement(target: string, friendly: string): string {
     const t = target === "part" ? "part" : "motorcycle";
     const f = String(friendly).toLowerCase();
-    if (f === "adjustment") return "adjustment";
-    if (f === "addition" || f === "returned") return `${t}_add`;
-    if (f === "subtraction" || f === "damaged") return `${t}_subtract`;
+    if (f === "subtraction") return `${t}_subtract`;
     return `${t}_add`;
   }
 
-  const metadataExtra: Record<string, unknown> = {};
-  metadataExtra.target_type_selected = targetType;
-  metadataExtra.movement_friendly = movementFriendly;
-  if (movementFriendly === "damaged") metadataExtra.write_off_reason = formReason || "Damaged (legacy option)";
-  if (movementFriendly === "returned") metadataExtra.returned_from = "Customer (legacy option)";
-  if (movementFriendly === "adjustment") metadataExtra.adjustment_context = formReason || "Count correction (legacy option)";
+  const metadataExtra: Record<string, unknown> = {
+    target_type_selected: targetType,
+    movement_friendly: movementFriendly,
+  };
 
   const normalized: Record<string, unknown> = {
     movementType: combineMovement(targetType, movementFriendly),
