@@ -255,11 +255,6 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
     return `${t}_add`;
   }
 
-  const metadataExtra: Record<string, unknown> = {
-    target_type_selected: targetType,
-    movement_friendly: movementFriendly,
-  };
-
   const normalized: Record<string, unknown> = {
     movementType: combineMovement(targetType, movementFriendly),
     motorcycleVariantId: formVariantId || undefined,
@@ -308,10 +303,6 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
     requested_by: actor.userId,
     approval_status: "pending_approval",
   };
-
-  if (Object.keys(metadataExtra).length > 0) {
-    (insertPayload as unknown as { metadata: Record<string, unknown> }).metadata = metadataExtra;
-  }
 
   const { error } = await supabase.from("stock_movements").insert(insertPayload);
   if (error) return databaseAction("requestStockMovement", error);
