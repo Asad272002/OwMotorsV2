@@ -1,0 +1,8 @@
+record_type,motorcycle_slug,brand_slug,name,short_description,full_description,base_price,is_featured,seo_title,seo_description,category_slug,cc,color_name,color_hex,price,stock_status,quantity,is_default,is_active,group_name,label,value,unit,sort_order,title,description,icon_identifier,variant_cc,variant_color
+motorcycle,example-150,taro,Example 150,"A practical 150cc motorcycle for confident everyday riding.","The Example 150 combines dependable engineering with comfortable ergonomics for daily urban travel.",285000,false,"Example 150 Motorcycle | OW Motors","Explore the Example 150 motorcycle with available colors specifications pricing and dealership contact information.",,,,,,,,,,,,,,,,,,,
+category,example-150,,,,,,,,,naked-bikes,,,,,,,,,,,,,,,,,,
+variant,example-150,,,,,,,,,,150,Midnight Black,#111111,285000,in_stock,5,true,true,,,,,,,,,,
+variant,example-150,,,,,,,,,,150,Performance Red,#C62828,285000,out_of_stock,0,false,true,,,,,,,,,,
+specification,example-150,,,,,,,,,,,,,,,,,,Engine & Performance,Engine Capacity,150,cc,10,,,,,
+specification,example-150,,,,,,,,,,,,,,,,,,Engine & Performance,Maximum Power,14.8,BHP,20,,,,150,Midnight Black
+feature,example-150,,,,,,,,,,,,,,,,,,Performance,,,,10,Responsive Engine,"Strong mid-range power delivery for confident everyday riding.",zap,,

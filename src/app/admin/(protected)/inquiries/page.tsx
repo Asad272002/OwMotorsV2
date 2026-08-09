@@ -1,0 +1,11 @@
+import { AdminForm } from "@/components/admin/admin-form.client";
+import { adminInputClass, adminLabelClass, AdminEmptyState, AdminPageHeader, StatusBadge } from "@/components/admin/admin-ui";
+import { updateInquiryStatus } from "@/app/admin/workflow-actions";
+import { getAdminInquiries } from "@/lib/admin/queries";
+
+export default async function AdminInquiriesPage() {
+  const inquiries = await getAdminInquiries();
+  return <><AdminPageHeader eyebrow="Customers" title="Contact Inquiries" description="Private customer messages are visible only to active OW Motors staff through RLS." />
+    <div className="space-y-5">{inquiries.length ? inquiries.map((inquiry) => <article key={inquiry.id} className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] sm:p-6"><div className="flex flex-col justify-between gap-4 border-b border-[#E5E7EB] pb-4 sm:flex-row"><div><h2 className="font-display text-2xl font-bold">{inquiry.subject}</h2><p className="mt-1 text-sm font-semibold">{inquiry.full_name}</p><p className="mt-1 text-xs text-[#6B7280]">Received {new Date(inquiry.created_at).toLocaleString("en-PK")}</p></div><StatusBadge value={inquiry.status} /></div><p className="whitespace-pre-wrap py-5 text-sm leading-7 text-[#6B7280]">{inquiry.message}</p><div className="mb-5 flex flex-wrap gap-4 border-y border-[#E5E7EB] py-3 text-sm"><a className="font-semibold text-[#C62828] hover:underline" href={`mailto:${inquiry.email}`}>{inquiry.email}</a>{inquiry.phone ? <a className="font-semibold text-[#C62828] hover:underline" href={`tel:${inquiry.phone}`}>{inquiry.phone}</a> : null}</div><AdminForm action={updateInquiryStatus} submitLabel="Update status" className="flex flex-col items-start gap-3 sm:flex-row sm:items-end"><input type="hidden" name="id" value={inquiry.id} /><label className={`${adminLabelClass} w-full sm:max-w-xs`}>Follow-up status<select className={adminInputClass} name="status" defaultValue={inquiry.status}><option value="new">New</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option><option value="spam">Spam</option></select></label></AdminForm></article>) : <AdminEmptyState title="No contact inquiries" description="New customer messages will appear here for follow-up." />}</div>
+  </>;
+}
