@@ -841,7 +841,6 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   let recordedPayments = 0;
   let paymentInsertFailed = false;
   const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
-  const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
   function serverTxnRef(): string {
     const now = new Date();
     const pad = (n: number, len = 2) => String(n).padStart(len, "0");
