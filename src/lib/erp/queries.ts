@@ -396,6 +396,21 @@ type ReceiptLogTarget = {
   sale?: SaleLogTarget | null;
 };
 
+function metadataTargetContext(metadata: unknown): ActivityTargetContext | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const context = (metadata as { target_context?: unknown }).target_context;
+  if (!context || typeof context !== "object" || Array.isArray(context)) return null;
+  const row = context as Record<string, unknown>;
+  const title = typeof row.title === "string" ? row.title : "";
+  if (!title) return null;
+  return {
+    title,
+    subtitle: typeof row.subtitle === "string" ? row.subtitle : "",
+    reason: typeof row.reason === "string" ? row.reason : null,
+    amount: typeof row.amount === "number" ? row.amount : null,
+  };
+}
+
 function saleLabel(sale: SaleLogTarget | null | undefined): ActivityTargetContext | null {
   if (!sale) return null;
   const bike = [sale.brand_name_snapshot, sale.motorcycle_name_snapshot, sale.cc_snapshot ? `${sale.cc_snapshot}cc` : null]
@@ -518,18 +533,20 @@ export const listActivityLogs = cache(async (limit = 200): Promise<readonly Acti
     const sale = log.target_table === "sales" && log.target_id ? sales.get(log.target_id) : null;
     const receipt = log.target_table === "receipts" && log.target_id ? receipts.get(log.target_id) : null;
     const receiptForSale = sale?.id ? receiptsBySale.get(sale.id) : null;
+    const metadataTarget = metadataTargetContext(log.metadata);
     const actorId =
       log.actor_id ??
       (log.action === "sale_requested" ? sale?.requested_by : null) ??
       (log.action === "sale_approved" ? sale?.approved_by : null) ??
       (log.action === "sale_rejected" ? sale?.rejected_by : null) ??
+      (log.action === "payment_recorded" ? sale?.requested_by : null) ??
       (log.action === "receipt_generated" ? receipt?.generated_by : null) ??
       (log.action === "sale_completed" ? receiptForSale?.generated_by ?? sale?.approved_by : null);
 
     return {
       ...log,
       resolved_actor: actorId ? profiles.get(actorId) ?? null : log.actor_profile ?? null,
-      target_context: log.target_table === "receipts" ? receiptLabel(receipt) : saleLabel(sale),
+      target_context: (log.target_table === "receipts" ? receiptLabel(receipt) : saleLabel(sale)) ?? metadataTarget,
     };
   });
 });

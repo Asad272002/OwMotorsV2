@@ -5,7 +5,7 @@ import { AdminForm } from "@/components/admin/admin-form.client";
 import { adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { listStaffProfiles } from "@/lib/erp/queries";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { createStaffUser, revokeStaffAccess, updateStaffUser } from "@/app/admin/erp-actions";
+import { createStaffUser, revokeStaffAccess, updateStaffUser } from "@/app/admin/erp-actions/users";
 
 export const metadata = { title: "Users & Access" };
 
@@ -221,3 +221,4 @@ export default async function UsersAccessPage() {
     </div>
   );
 }
+

@@ -3,7 +3,7 @@ import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelCl
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { listStockMovements, listParts, listMotorcycleVariantsForSale } from "@/lib/erp/queries";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { requestStockMovement } from "@/app/admin/erp-actions";
+import { requestStockMovement } from "@/app/admin/erp-actions/stock";
 import { History, PackageOpen, Bike, ShieldCheck } from "lucide-react";
 
 export const metadata = { title: "Stock Changes" };
@@ -184,3 +184,4 @@ export default async function StockMovementsPage() {
     </div>
   );
 }
+

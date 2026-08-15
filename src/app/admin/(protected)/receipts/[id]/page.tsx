@@ -108,76 +108,87 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
   );
   const saleRefNumber = s.receipt_number || displayReceiptNumber;
   const dateIso = receipt.generated_at ?? s.requested_at;
+  const receiptDate = new Date(dateIso).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+  const vehicleLabel = [s.brand_name_snapshot, s.motorcycle_name_snapshot, s.cc_snapshot ? `${s.cc_snapshot}cc` : null].filter(Boolean).join(" ");
 
   return (
     <div className="min-h-screen bg-gray-100 py-4 sm:py-8 print:bg-white print:py-0">
       <div className="mx-auto w-full max-w-3xl px-3 sm:px-6 print:px-0">
         <ReceiptPrintActionBar receiptNumber={displayReceiptNumber} />
 
-        <section data-receipt-root className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none" style={{ fontFamily: "Rajdhani, Inter, system-ui, sans-serif" }}>
-          <header className="relative overflow-hidden border-b-4 border-[#C62828] bg-gradient-to-br from-white via-[#FFF8F8] to-[#FEF2F2] px-6 py-4 print:px-5 print:py-3">
-            <div aria-hidden className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-[#C62828]/5 blur-3xl" />
-            <div className="relative flex flex-wrap items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-16 w-20 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white p-1.5">
+        <section data-receipt-root className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none" style={{ fontFamily: "Rajdhani, Inter, system-ui, sans-serif" }}>
+          <header className="border-b-4 border-[#C62828] bg-white px-7 py-5 print:px-5 print:py-4">
+            <div className="flex items-start justify-between gap-5">
+              <div className="flex min-w-0 items-start gap-4">
+                <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white p-2 print:h-14 print:w-20">
                   <Image src="/images/ow-motors-logo.png" alt="OW Motors" width={1536} height={1024} className="h-full w-full object-contain" priority />
                 </div>
-                <div>
-                  <p className="font-display text-3xl font-black leading-none tracking-normal text-[#111111]">OW MOTORS</p>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Multi-Brand Motorcycle Showroom</p>
-                  <div className="mt-1.5 grid grid-cols-1 gap-0.5 text-[11px] text-[#374151]">
-                    <span className="inline-flex items-start gap-1.5"><MapPin aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#C62828] mt-0.5" />{SHOWROOM.address}</span>
+                <div className="min-w-0">
+                  <p className="font-display text-3xl font-black leading-none tracking-normal text-[#111111] print:text-2xl">OW MOTORS</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#C62828]">Multi-brand motorcycle showroom</p>
+                  <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] leading-4 text-[#374151] print:text-[10px]">
+                    <span className="inline-flex items-start gap-1.5"><MapPin aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#C62828]" />{SHOWROOM.address}</span>
                     <span className="inline-flex items-center gap-1.5"><Phone aria-hidden className="h-3.5 w-3.5 text-[#C62828]" />{SHOWROOM.phone}</span>
                     <span className="inline-flex items-center gap-1.5"><Globe2 aria-hidden className="h-3.5 w-3.5 text-[#C62828]" />{SHOWROOM.website}</span>
                   </div>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="font-display text-4xl font-black tracking-normal text-[#C62828] leading-none">RECEIPT</p>
-                <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.22em] text-[#6B7280]">Sale Invoice | Motor Vehicle</p>
-                <dl className="mt-2 space-y-0.5 border border-[#E5E7EB] bg-white/80 p-2 text-[11px]">
-                  <div className="flex justify-between gap-6"><dt className="text-[#6B7280]">Receipt No.</dt><dd className="font-mono font-bold text-[#111111]">{displayReceiptNumber}</dd></div>
-                  <div className="flex justify-between gap-6"><dt className="text-[#6B7280]">Sale Ref.</dt><dd className="font-mono">{saleRefNumber}</dd></div>
-                  <div className="flex justify-between gap-6"><dt className="text-[#6B7280]">Date</dt><dd className="font-semibold">{new Date(dateIso).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}</dd></div>
-                  <div className="flex justify-between gap-6"><dt className="text-[#6B7280]">Place</dt><dd className="font-semibold">Township, Lahore</dd></div>
+              <div className="w-[270px] shrink-0 text-right print:w-[240px]">
+                <p className="font-display text-4xl font-black leading-none tracking-normal text-[#C62828] print:text-3xl">RECEIPT</p>
+                <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Sale invoice | Motor vehicle</p>
+                <dl className="mt-3 overflow-hidden rounded-md border border-[#E5E7EB] text-[11px]">
+                  <div className="bg-[#111111] px-3 py-2 text-left font-mono text-[10px] font-bold text-white">{displayReceiptNumber}</div>
+                  <div className="grid grid-cols-[82px_1fr] gap-2 border-t border-[#E5E7EB] px-3 py-1.5"><dt className="text-left text-[#6B7280]">Sale Ref.</dt><dd className="truncate font-mono font-semibold text-[#111111]">{saleRefNumber}</dd></div>
+                  <div className="grid grid-cols-[82px_1fr] gap-2 border-t border-[#E5E7EB] px-3 py-1.5"><dt className="text-left text-[#6B7280]">Date</dt><dd className="font-semibold">{receiptDate}</dd></div>
+                  <div className="grid grid-cols-[82px_1fr] gap-2 border-t border-[#E5E7EB] px-3 py-1.5"><dt className="text-left text-[#6B7280]">Place</dt><dd className="font-semibold">Township, Lahore</dd></div>
                 </dl>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-4 border-t border-gray-200 pt-3 text-[11px] print:mt-3 print:pt-2">
+              <div>
+                <p className="font-bold uppercase tracking-[0.18em] text-[#6B7280]">Vehicle</p>
+                <p className="mt-0.5 font-display text-lg font-bold text-[#111111] print:text-base">{vehicleLabel}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-bold uppercase tracking-[0.18em] text-[#6B7280]">Amount received</p>
+                <p className="mt-0.5 font-display text-xl font-black text-[#C62828] print:text-lg">{pkr(totalPaid)}</p>
               </div>
             </div>
           </header>
 
-          <div className="grid grid-cols-1 gap-5 px-6 py-4 md:grid-cols-2 print:gap-3 print:px-5 print:py-3">
+          <div className="grid grid-cols-1 gap-4 px-7 py-5 md:grid-cols-2 print:gap-3 print:px-5 print:py-3">
             <section>
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Customer Information</h2>
-              <dl className="mt-2 space-y-1 rounded-md border border-[#E5E7EB] bg-[#FAFAFA] p-3 text-[12px]">
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Full name</dt><dd className="font-semibold text-[#111111]">{s.customer?.full_name ?? "-"}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">CNIC No.</dt><dd className="font-mono font-semibold">{s.customer?.cnic ?? "-"}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Phone</dt><dd className="font-mono font-semibold">{s.customer?.phone_primary ?? "-"}{s.customer?.phone_secondary ? <> | {s.customer.phone_secondary}</> : null}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">City</dt><dd className="font-semibold">{s.customer?.city ?? "-"}</dd></div>
-                <div className="flex flex-col gap-0.5"><dt className="text-[#6B7280]">Address</dt><dd className="font-semibold leading-4 text-[#111111]">{s.customer?.address ?? "-"}</dd></div>
+              <h2 className="border-b-2 border-[#C62828] pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#C62828]">Customer Information</h2>
+              <dl className="mt-2 divide-y divide-[#E5E7EB] rounded-md border border-[#E5E7EB] bg-white text-[12px]">
+                <div className="grid grid-cols-[88px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Full name</dt><dd className="text-right font-bold text-[#111111]">{s.customer?.full_name ?? "-"}</dd></div>
+                <div className="grid grid-cols-[88px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">CNIC No.</dt><dd className="text-right font-mono font-semibold">{s.customer?.cnic ?? "-"}</dd></div>
+                <div className="grid grid-cols-[88px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Phone</dt><dd className="text-right font-mono font-semibold">{s.customer?.phone_primary ?? "-"}{s.customer?.phone_secondary ? <> | {s.customer.phone_secondary}</> : null}</dd></div>
+                <div className="grid grid-cols-[88px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">City</dt><dd className="text-right font-semibold">{s.customer?.city ?? "-"}</dd></div>
+                <div className="px-3 py-2"><dt className="text-[#6B7280]">Address</dt><dd className="mt-0.5 font-semibold leading-4 text-[#111111]">{s.customer?.address ?? "-"}</dd></div>
               </dl>
             </section>
 
             <section>
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Vehicle Information</h2>
-              <dl className="mt-2 space-y-1 rounded-md border border-[#E5E7EB] bg-[#FAFAFA] p-3 text-[12px]">
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Brand</dt><dd className="font-display text-base font-bold text-[#111111]">{s.brand_name_snapshot}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Model</dt><dd className="font-display text-base font-bold text-[#111111]">{s.motorcycle_name_snapshot}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Displacement</dt><dd className="font-semibold">{s.cc_snapshot} cc</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Color</dt><dd className="font-semibold">{s.color_name_snapshot ?? "-"}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Chasis No.</dt><dd className="font-mono font-bold text-[#C62828]">{s.chasis_number}</dd></div>
-                <div className="flex justify-between gap-4"><dt className="text-[#6B7280]">Quantity</dt><dd className="font-display text-xl font-black text-[#111111]">x {qty}</dd></div>
+              <h2 className="border-b-2 border-[#C62828] pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#C62828]">Vehicle Information</h2>
+              <dl className="mt-2 divide-y divide-[#E5E7EB] rounded-md border border-[#E5E7EB] bg-white text-[12px]">
+                <div className="grid grid-cols-[96px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Brand</dt><dd className="text-right font-display text-base font-bold text-[#111111]">{s.brand_name_snapshot}</dd></div>
+                <div className="grid grid-cols-[96px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Model</dt><dd className="text-right font-display text-base font-bold text-[#111111]">{s.motorcycle_name_snapshot}</dd></div>
+                <div className="grid grid-cols-[96px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Displacement</dt><dd className="text-right font-semibold">{s.cc_snapshot} cc</dd></div>
+                <div className="grid grid-cols-[96px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Color</dt><dd className="text-right font-semibold">{s.color_name_snapshot ?? "-"}</dd></div>
+                <div className="grid grid-cols-[96px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Chasis No.</dt><dd className="text-right font-mono font-bold text-[#C62828]">{s.chasis_number}</dd></div>
+                <div className="grid grid-cols-[96px_1fr] gap-3 px-3 py-2"><dt className="text-[#6B7280]">Quantity</dt><dd className="text-right font-display text-xl font-black text-[#111111]">x {qty}</dd></div>
               </dl>
             </section>
           </div>
 
-          <div className="px-6 pb-5 print:px-5 print:pb-3">
-            <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Payment Breakdown</h2>
+          <div className="px-7 pb-5 print:px-5 print:pb-3">
+            <h2 className="border-b-2 border-[#C62828] pb-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#C62828]">Payment Breakdown</h2>
             <p className="mt-0.5 text-[11px] text-[#6B7280]">Record of every payment method and bank used for this sale.</p>
             <div className="mt-2 overflow-hidden rounded-md border border-[#E5E7EB]">
               <table className="w-full border-collapse text-[12px]">
                 <thead className="bg-[#C62828] text-white">
                   <tr className="text-[10px] font-bold uppercase tracking-[0.12em]">
-                    <th className="px-2.5 py-2 text-left">#</th>
+                    <th className="w-8 px-2.5 py-2 text-left">#</th>
                     <th className="px-2.5 py-2 text-left">Payment Method</th>
                     <th className="px-2.5 py-2 text-left">Bank</th>
                     <th className="px-2.5 py-2 text-left">Instrument #</th>
@@ -240,35 +251,35 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
               </table>
             </div>
             <p className="mt-3 text-center font-display text-2xl font-black tracking-normal text-[#C62828] print:mt-2 print:text-xl">
-              TOTAL RECEIVED: {pkr(totalPaid)}
+              Total Received: {pkr(totalPaid)}
             </p>
             <p className="text-center text-[11px] text-[#6B7280]">Rupees in words: <span className="font-semibold text-[#111111]">{numberToPKRWords(totalPaid)}</span></p>
           </div>
 
           {s.notes ? (
-            <div className="mx-6 mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-[12px] text-[#B45309]">
-              <p className="text-[10px] font-bold uppercase tracking-widest">Sale notes</p>
-              <p className="mt-0.5">{s.notes}</p>
+            <div className="mx-7 mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-[#92400E] print:mx-5 print:mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em]">Sale notes</p>
+              <p className="mt-0.5 leading-4">{s.notes}</p>
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-6 border-t border-gray-200 bg-[#FAFAFA] px-6 py-5 print:px-5 print:py-3">
+          <div className="grid grid-cols-2 gap-8 border-t border-gray-200 bg-[#FAFAFA] px-7 py-5 print:gap-6 print:px-5 print:py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B7280]">For OW Motors</p>
-              <p className="mt-10 border-b border-dashed border-[#9CA3AF] print:mt-6" />
-              <p className="mt-2 text-[12px] font-semibold">Manager / Authorized Signatory</p>
-              <p className="text-[11px] text-[#6B7280]">Name, Signature & Stamp</p>
+              <p className="mt-10 border-b border-dashed border-[#9CA3AF] print:mt-7" />
+              <p className="mt-2 text-[12px] font-bold text-[#111111]">Manager / Authorized Signatory</p>
+              <p className="text-[10px] text-[#6B7280]">Name, signature and stamp</p>
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B7280]">Customer Acknowledgment</p>
-              <p className="mt-2 text-[11px] leading-4 text-[#374151]">I hereby confirm receiving the above vehicle in good, roadworthy condition along with all documents and accessories. I acknowledge the payment split as stated above.</p>
+              <p className="mt-2 text-[10px] leading-4 text-[#374151]">I confirm receiving the above vehicle in satisfactory condition with documents and accessories. Payment details are accepted as stated.</p>
               <p className="mt-4 border-b border-dashed border-[#9CA3AF] print:mt-3" />
-              <p className="mt-2 text-[12px] font-semibold">Customer Signature & Name</p>
-              <p className="text-[11px] text-[#6B7280]">Date: ______________________</p>
+              <p className="mt-2 text-[12px] font-bold text-[#111111]">Customer Signature & Name</p>
+              <p className="text-[10px] text-[#6B7280]">Date: ______________________</p>
             </div>
           </div>
 
-          <footer className="border-t-2 border-[#C62828] bg-[#C62828]/5 px-6 py-3 text-center text-[11px] text-[#6B7280] print:px-5 print:py-2">
+          <footer className="border-t-2 border-[#C62828] bg-white px-7 py-3 text-center text-[11px] text-[#6B7280] print:px-5 print:py-2">
             <p className="font-semibold text-[#111111]">Thank you for choosing OW MOTORS - Ride Safe, Ride Happy!</p>
             <p className="mt-0.5 text-[10px]">This is a computer-generated receipt. No signature required for validity. Subject to showroom terms & conditions. Vehicle subject to manufacturer warranty. All disputes subject to Lahore courts.</p>
           </footer>

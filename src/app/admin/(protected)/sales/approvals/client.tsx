@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
-import { decideSale } from "@/app/admin/erp-actions";
+import { decideSale } from "@/app/admin/erp-actions/sales";
 import { CircleCheck, CircleX, ShieldCheck } from "lucide-react";
 
 type PendingApprovalSaleRow = {
@@ -199,3 +199,4 @@ export function SaleApprovalsClient({
     </>
   );
 }
+

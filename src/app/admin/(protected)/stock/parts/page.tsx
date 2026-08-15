@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { listParts } from "@/lib/erp/queries";
-import { createOrUpdatePart } from "@/app/admin/erp-actions";
+import { createOrUpdatePart } from "@/app/admin/erp-actions/stock";
 import { PackageOpen, Plus, AlertTriangle, Package } from "lucide-react";
 
 export const metadata = { title: "Spare Parts Inventory" };
@@ -108,3 +108,4 @@ export default async function PartsPage() {
     </div>
   );
 }
+

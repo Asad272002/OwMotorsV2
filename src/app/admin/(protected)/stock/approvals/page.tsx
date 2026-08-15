@@ -1,7 +1,7 @@
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { listPendingStockMovements } from "@/lib/erp/queries";
-import { decideStockMovement } from "@/app/admin/erp-actions";
+import { decideStockMovement } from "@/app/admin/erp-actions/stock";
 import { CircleCheck, CircleX, ShieldCheck, Bike, PackageOpen } from "lucide-react";
 
 export const metadata = { title: "Stock Change Approvals" };
@@ -138,3 +138,4 @@ export default async function StockApprovalsPage() {
     </div>
   );
 }
+

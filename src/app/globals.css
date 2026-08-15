@@ -380,14 +380,29 @@ header.sticky :is(a, button, summary):focus-visible,
   }
 }
 
+@keyframes new-sale-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.new-sale-step {
+  animation: new-sale-step-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* ==============================================
    OW Motors A4 Receipt Print Styles
    ----------------------------------------------
    The receipt page marks the printable card with
    the data-receipt-root attribute. In print mode
    we hide the admin chrome (sidebar / topbar /
-    breadcrumbs) entirely and prints the receipt
-    card as a normal A4 document with safe margins.
+   breadcrumbs) entirely and prints the receipt
+   card as a normal A4 document with safe margins.
    ============================================== */
 @page {
   size: A4 portrait;
@@ -432,10 +447,10 @@ header.sticky :is(a, button, summary):focus-visible,
     page-break-inside: avoid;
   }
 
-  body header,
-  body nav,
-  body aside,
-  body footer,
+  body > header,
+  body > nav,
+  body > aside,
+  body > footer,
   body .admin-shell-sidebar,
   body .admin-shell-topbar,
   body [role="banner"],

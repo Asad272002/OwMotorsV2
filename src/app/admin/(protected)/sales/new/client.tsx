@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bike, Building2, CreditCard, FileText, Landmark, PencilLine, Plus, Trash2, Wallet, Search
+  Bike, Building2, CheckCircle2, Circle, CircleDot, CreditCard, FileText, Landmark, PencilLine, Plus, Trash2, Wallet, Search
 } from "lucide-react";
-import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
+import { AdminPageHeader, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
-import { initiateSale } from "@/app/admin/erp-actions";
+import { initiateSale } from "@/app/admin/erp-actions/sales";
 
 const ERROR_INPUT_RING = "ring-2 ring-[#C62828]/70 border-[#C62828] focus:ring-[#C62828]";
 function joinMessages(msgs: readonly (string | null | undefined)[] | null | undefined): string {
@@ -41,6 +41,7 @@ const paymentMethods: { value: "cash" | "bank_transfer" | "cheque" | "demand_dra
 ];
 
 type PaymentRow = { id: string; payment_method: string; bank_id: string; amount: string; instrument_number: string; transaction_ref: string };
+type StepStatus = "complete" | "active" | "pending";
 
 function pkr(n: number | string): string {
   const num = typeof n === "string" ? Number(n.replace(/[^0-9]/g, "")) || 0 : n;
@@ -59,6 +60,50 @@ function generateInternalTxnRef(): string {
     + pad(now.getMilliseconds(), 3);
   const rnd = String(Math.floor(Math.random() * 900) + 100);
   return "OWM-TXN-" + ts + "-" + rnd;
+}
+
+function StepPanel({
+  step,
+  title,
+  description,
+  status,
+  actions,
+  delay = 0,
+  children,
+}: Readonly<{
+  step: number;
+  title: string;
+  description: string;
+  status: StepStatus;
+  actions?: React.ReactNode;
+  delay?: number;
+  children: React.ReactNode;
+}>) {
+  const Icon = status === "complete" ? CheckCircle2 : status === "active" ? CircleDot : Circle;
+  const tone = status === "complete"
+    ? "border-green-200 bg-green-50 text-[#15803D]"
+    : status === "active"
+      ? "border-[#C62828]/30 bg-[#FEF2F2] text-[#C62828]"
+      : "border-[#E5E7EB] bg-white text-[#6B7280]";
+
+  return (
+    <section className={`new-sale-step overflow-hidden rounded-lg border bg-white shadow-[0_12px_28px_rgb(17_17_17/0.06)] ${status === "active" ? "border-[#C62828]/35 ring-4 ring-[#C62828]/5" : "border-[#E5E7EB]"}`} style={{ animationDelay: `${delay}ms` }}>
+      <header className="flex flex-col justify-between gap-4 border-b border-[#E5E7EB] px-5 py-4 sm:flex-row sm:items-center sm:px-6">
+        <div className="flex items-start gap-3">
+          <span className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${tone}`}>
+            <Icon aria-hidden="true" className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Step {step}</p>
+            <h2 className="mt-0.5 font-display text-2xl font-bold leading-tight text-[#111111]">{title}</h2>
+            <p className="mt-1.5 max-w-3xl text-sm leading-5 text-[#6B7280]">{description}</p>
+          </div>
+        </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
+      </header>
+      <div className="p-5 sm:p-6">{children}</div>
+    </section>
+  );
 }
 
 export default function NewSalePageClient(props: {
@@ -121,6 +166,14 @@ export default function NewSalePageClient(props: {
   }, [customerSearch, customers]);
 
   const selectedCustomer = useMemo(() => customers.find(c => c.id === existingCustomerId) ?? null, [existingCustomerId, customers]);
+  const hasBuyer = Boolean(selectedCustomer || createNewCustomer);
+  const bikeStepComplete = Boolean(chosen && chasisNumber.trim() && hasBuyer);
+  const paymentStepComplete = totalAmount > 0 && paidAmount >= totalAmount && payments.some(p => (Number(p.amount.replace(/[^0-9]/g, "")) || 0) > 0);
+  const stepStates: [StepStatus, StepStatus, StepStatus] = [
+    bikeStepComplete ? "complete" : "active",
+    !bikeStepComplete ? "pending" : paymentStepComplete ? "complete" : "active",
+    bikeStepComplete && paymentStepComplete ? "active" : "pending",
+  ];
 
   function addPayment() {
     const newId = crypto.randomUUID();
@@ -156,11 +209,11 @@ export default function NewSalePageClient(props: {
     return () => { window.removeEventListener("admin-form:errors", onErrors as EventListener); };
   }, []);
 
-  const canSubmit = !!chosen && !!chasisNumber && (selectedCustomer || createNewCustomer) && payments.every(p => {
+  const canSubmit = !!chosen && !!chasisNumber && hasBuyer && payments.every(p => {
     const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
     const amt = Number(p.amount.replace(/[^0-9]/g, "")) || 0;
     return amt > 0 && (!needBank || !!p.bank_id);
-  });
+  }) && paidAmount >= totalAmount && totalAmount > 0;
   function errText(...paths: string[]): string {
     for (const p of paths) {
       const arr = formErrors[p];
@@ -184,6 +237,28 @@ export default function NewSalePageClient(props: {
         actions={<Link href="/admin/sales/list" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">View all sales</Link>}
       />
 
+      <div className="new-sale-step rounded-lg border border-[#E5E7EB] bg-white p-3 shadow-[0_8px_20px_rgb(17_17_17/0.05)]">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+          {[
+            { label: "Bike & buyer", value: stepStates[0] },
+            { label: "Payment", value: stepStates[1] },
+            { label: "Approval request", value: stepStates[2] },
+          ].map((item, idx) => {
+            const active = item.value === "active";
+            const complete = item.value === "complete";
+            return (
+              <div key={item.label} className={`flex items-center gap-3 rounded-md border px-3 py-3 transition-all duration-300 ${complete ? "border-green-200 bg-green-50" : active ? "border-[#C62828]/30 bg-[#FEF2F2]" : "border-[#E5E7EB] bg-[#FAFAFA]"}`}>
+                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-black ${complete ? "bg-[#15803D] text-white" : active ? "bg-[#C62828] text-white" : "bg-white text-[#6B7280]"}`}>{complete ? "OK" : idx + 1}</span>
+                <div>
+                  <p className="text-sm font-bold text-[#111111]">{item.label}</p>
+                  <p className="text-xs capitalize text-[#6B7280]">{item.value}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-md border border-[#E5E7EB] bg-white p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Bike</p>
@@ -202,7 +277,7 @@ export default function NewSalePageClient(props: {
         </div>
       </div>
 
-      <AdminPanel title="Step 1 - Bike & Customer" description="Choose the exact variant and buyer for this sale." actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
+      <StepPanel step={1} title="Bike & Customer" description="Choose the exact variant and buyer for this sale." status={stepStates[0]} delay={80} actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
         <div className="space-y-6">
           <div>
             <label className={adminLabelClass}>Search bike</label>
@@ -338,11 +413,14 @@ export default function NewSalePageClient(props: {
             <textarea value={saleNotes ?? ""} onChange={e => setSaleNotes(e.target.value)} name="notes" form="main-sale-form" className={adminInputClass + " min-h-[84px]"} placeholder="Anything the admin or another manager should know about this sale." />
           </div>
         </div>
-      </AdminPanel>
+      </StepPanel>
 
-      <AdminPanel
-        title="Step 2 - Payments"
+      <StepPanel
+        step={2}
+        title="Payments"
         description="Record every payment method used. Multiple payment splits and banks are supported."
+        status={stepStates[1]}
+        delay={160}
         actions={
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span className={`rounded-md px-3 py-1.5 ${paidAmount > 0 ? "border border-green-200 bg-green-50 text-[#15803D]" : "border border-[#E5E7EB] bg-white text-[#6B7280]"}`}>Paid: {pkr(paidAmount)}</span>
@@ -401,11 +479,14 @@ export default function NewSalePageClient(props: {
             <Plus aria-hidden="true" className="h-4 w-4" />Add another payment split (e.g. second bank, partial cash)
           </button>
         </div>
-      </AdminPanel>
+      </StepPanel>
 
-      <AdminPanel
-        title="Step 3 - Submit for Admin approval"
+      <StepPanel
+        step={3}
+        title="Submit for Admin approval"
         description="Once submitted, Admin must approve before: 1) stock is deducted, 2) bike status becomes SOLD, 3) receipt generation is unlocked."
+        status={stepStates[2]}
+        delay={240}
       >
         <AdminForm
           action={initiateSale}
@@ -457,13 +538,14 @@ export default function NewSalePageClient(props: {
           }))} />
 
           <div className="md:col-span-2 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-[#B45309]">
-            <p><strong>⚠ No stock deduction yet.</strong> Stock subtraction and receipt generation happen <strong>only after Admin approves</strong>. Until then, this is just a pending record.</p>
+            <p><strong>No stock deduction yet.</strong> Stock subtraction and receipt generation happen <strong>only after Admin approves</strong>. Until then, this is just a pending record.</p>
           </div>
           <div className="md:col-span-2 flex items-center justify-between gap-4">
             <span className="text-xs text-[#6B7280]">{payments.filter(p => Number(p.amount.replace(/[^0-9]/g, "")) > 0).length} payment(s) recorded.</span>
           </div>
         </AdminForm>
-      </AdminPanel>
+      </StepPanel>
     </div>
   );
 }
+

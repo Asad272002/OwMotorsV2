@@ -57,6 +57,8 @@ function sentenceFor(log: ActivityLogWithContext): string {
       return `${actor} rejected sale ${target}${reason ? ` because "${reason}"` : ""}.`;
     case "sale_completed":
       return `${actor} completed sale ${target}.`;
+    case "payment_recorded":
+      return `${actor} recorded a payment on sale ${target}.`;
     case "receipt_generated":
       return `${actor} generated receipt ${target}.`;
     case "receipt_printed":

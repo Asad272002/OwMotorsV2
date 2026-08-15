@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Pencil, X, Save } from "lucide-react";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { adminInputClass, StatusBadge } from "@/components/admin/admin-ui";
-import { updateVariantDetails } from "@/app/admin/erp-actions";
+import { updateVariantDetails } from "@/app/admin/erp-actions/stock";
 
 export type VariantRowClient = {
   id: string;
@@ -187,3 +187,4 @@ export function VariantAdminEditorTable({
     </div>
   );
 }
+

@@ -5,9 +5,8 @@ import { useMemo, useState } from "react";
 import { Search, UserPlus, UserCheck, FileText, ChevronDown, ChevronUp, Bike } from "lucide-react";
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
-import { createOrUpdateCustomer, initiateSale } from "@/app/admin/erp-actions";
+import { createOrUpdateCustomer } from "@/app/admin/erp-actions/sales";
 
-type Bank = { id: string; name: string };
 type Sale = { id: string; receipt_number: string; sale_status: string; requested_at: string; total_amount: number; brand_name_snapshot: string; motorcycle_name_snapshot: string; cc_snapshot: number; color_name_snapshot: string | null; chasis_number: string; quantity: number };
 type Customer = {
   id: string; full_name: string; cnic: string; phone_primary: string | null; phone_secondary: string | null;
@@ -205,3 +204,4 @@ export default function CustomersPageClient(props: {
     </div>
   );
 }
+

@@ -3,7 +3,7 @@ import { AdminPageHeader, StatusBadge } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { listReceipts, listSales } from "@/lib/erp/queries";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { generateReceipt } from "@/app/admin/erp-actions";
+import { generateReceipt } from "@/app/admin/erp-actions/sales";
 import { ReceiptsRegisterClient } from "./register.client";
 import { FileCheck, Printer, BadgeDollarSign, AlertTriangle } from "lucide-react";
 
@@ -151,3 +151,4 @@ export default async function ReceiptsPage() {
     </div>
   );
 }
+
