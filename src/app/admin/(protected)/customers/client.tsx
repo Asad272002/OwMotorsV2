@@ -2,18 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Search, UserPlus, UserCheck, FileText, ChevronDown, ChevronUp, Bike } from "lucide-react";
+import { Search, UserPlus, UserCheck, FileText, ChevronDown, ChevronUp, Bike, PackageOpen } from "lucide-react";
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { createOrUpdateCustomer } from "@/app/admin/erp-actions/sales";
 
 type Sale = { id: string; receipt_number: string; sale_status: string; requested_at: string; total_amount: number; brand_name_snapshot: string; motorcycle_name_snapshot: string; cc_snapshot: number; color_name_snapshot: string | null; chasis_number: string; quantity: number };
+type PartPurchase = { id: string; sale_number: string; sold_at: string; total_amount: number; items?: Array<{ id: string; sku_snapshot: string; name_snapshot: string; quantity: number }> | null };
 type Customer = {
   id: string; full_name: string; cnic: string; phone_primary: string | null; phone_secondary: string | null;
   address: string | null; city: string | null; chasis_numbers: string[] | null; notes: string | null;
   created_at: string;
   purchases?: Sale[];
   sales?: Sale[];
+  partPurchases?: PartPurchase[];
+  part_sales?: PartPurchase[];
 };
 function getCustomerPurchases(c: Customer): Sale[] {
   if (Array.isArray(c.purchases)) return c.purchases;
@@ -21,6 +24,11 @@ function getCustomerPurchases(c: Customer): Sale[] {
   return [];
 }
 
+function getCustomerPartPurchases(c: Customer): PartPurchase[] {
+  if (Array.isArray(c.partPurchases)) return c.partPurchases;
+  if (Array.isArray(c.part_sales)) return c.part_sales;
+  return [];
+}
 function pkr(n: number): string {
   return "PKR " + (n || 0).toLocaleString("en-PK");
 }
@@ -49,7 +57,8 @@ export default function CustomersPageClient(props: {
       c.full_name.toLowerCase().includes(needle) ||
       (c.phone_primary ?? "").replace(/[^0-9]/g, "").includes(needle.replace(/[^0-9]/g, "")) ||
       (c.chasis_numbers ?? []).some(x => x.toLowerCase().includes(needle)) ||
-      getCustomerPurchases(c).some(p => p.chasis_number.toLowerCase().includes(needle) || p.receipt_number.toLowerCase().includes(needle))
+      getCustomerPurchases(c).some(p => p.chasis_number.toLowerCase().includes(needle) || p.receipt_number.toLowerCase().includes(needle)) ||
+      getCustomerPartPurchases(c).some(p => p.sale_number.toLowerCase().includes(needle) || (p.items ?? []).some(item => item.sku_snapshot.toLowerCase().includes(needle) || item.name_snapshot.toLowerCase().includes(needle)))
     );
   }, [customers, q]);
 
@@ -91,6 +100,7 @@ export default function CustomersPageClient(props: {
             {filtered.map(c => {
               const open = openId === c.id;
               const customerPurchases = getCustomerPurchases(c);
+              const partPurchases = getCustomerPartPurchases(c);
               const bikesOwned = new Set([
                 ...(c.chasis_numbers ?? []),
                 ...customerPurchases.filter(p => p.sale_status === "approved" || p.sale_status === "completed").map(p => p.chasis_number)
@@ -145,7 +155,7 @@ export default function CustomersPageClient(props: {
                       <div className="lg:col-span-2">
                         <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-[#6B7280]">Purchase history</h3>
                         <div className="mt-3 space-y-2">
-                          {customerPurchases.length === 0 ? (
+                          {customerPurchases.length === 0 && partPurchases.length === 0 ? (
                             <div className="flex items-center gap-3 rounded-md border border-dashed border-[#D1D5DB] bg-white p-4 text-xs text-[#6B7280]">
                               <FileText aria-hidden="true" className="h-5 w-5 text-[#C62828]/60" />
                               No purchases on record yet.
@@ -153,7 +163,8 @@ export default function CustomersPageClient(props: {
                                 <Link href="/admin/sales/new" className="ml-auto inline-flex h-8 items-center gap-1 rounded-md border border-[#C62828] bg-white px-2 text-[11px] font-semibold text-[#C62828]">+ New sale for this customer</Link>
                               ) : null}
                             </div>
-                          ) : customerPurchases.map(p => {
+                          ) : (<>
+                            {customerPurchases.map(p => {
                             const meta = statusMeta[p.sale_status] ?? statusMeta.pending_approval;
                             return (
                               <div key={p.id} className="flex items-start gap-3 rounded-md border border-[#E5E7EB] bg-white p-3">
@@ -175,6 +186,17 @@ export default function CustomersPageClient(props: {
                               </div>
                             );
                           })}
+                            {partPurchases.map(p => (
+                              <div key={p.id} className="flex items-start gap-3 rounded-md border border-[#E5E7EB] bg-white p-3">
+                                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-green-50 text-[#15803D]"><PackageOpen aria-hidden="true" className="h-4 w-4" /></span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold text-[#111111]">Spare parts</p><StatusBadge value="completed" label="Completed" /></div>
+                                  <p className="mt-0.5 text-xs text-[#6B7280]">{(p.items ?? []).map(item => `${item.sku_snapshot} x ${item.quantity}`).join(" | ") || "Parts sale"}</p>
+                                  <div className="mt-2 flex flex-wrap items-center justify-between gap-3"><p className="font-display text-lg font-bold text-[#C62828]">{pkr(p.total_amount)}</p><div className="flex items-center gap-3 text-[11px] text-[#6B7280]"><span className="font-mono">{p.sale_number}</span><span>{new Date(p.sold_at).toLocaleDateString()}</span><Link href={`/admin/stock/part-sales/${p.id}`} className="font-semibold text-[#C62828] hover:underline">Receipt</Link></div></div>
+                                </div>
+                              </div>
+                            ))}
+                          </>)}
                         </div>
                       </div>
                     </div>

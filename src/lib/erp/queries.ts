@@ -8,7 +8,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import type {
   StaffProfile, Part, StockMovementWithDetails,
   Customer, Bank, Sale, SalePayment, SaleWithPayments, Receipt,
-  ActivityLog, CustomerPurchaseHistory, ReceiptPrintPayload,
+  ActivityLog, CustomerPurchaseHistory, ReceiptPrintPayload, PartSale,
 } from "@/lib/erp/types";
 import type { StaffRole } from "@/lib/erp/types";
 
@@ -66,6 +66,20 @@ export const listBanks = cache(async (): Promise<readonly Bank[]> => {
   return (data as Bank[]) ?? [];
 });
 
+
+export const listStockBrands = cache(async (): Promise<readonly { id: string; name: string; slug: string; is_active: boolean }[]> => {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return [];
+  const sb = privileged();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("brands")
+    .select("id, name, slug, is_active")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  return (data as { id: string; name: string; slug: string; is_active: boolean }[]) ?? [];
+});
+
 // ==============================================
 // PARTS INVENTORY
 // ==============================================
@@ -100,6 +114,27 @@ export const listPartsForApprentice = cache(async (): Promise<readonly (Omit<Par
   }));
 });
 
+
+export const listPendingPartSales = cache(async (): Promise<readonly PartSale[]> => {
+  const all = await listPartSales();
+  return all.filter((sale) => (sale.sale_status ?? "pending_approval") === "pending_approval");
+});
+
+export async function getPartSale(id: string): Promise<PartSale | null> {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("part_sales")
+    .select(`
+      *,
+      seller:profiles!part_sales_sold_by_fkey(full_name, role),
+      customer:customers(*),
+      items:part_sale_items(*, part:parts(id, sku, name, current_stock, unit_cost))
+    `)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return null;
+  return (data as unknown as PartSale) ?? null;
+}
 export async function getPart(id: string): Promise<Part | null> {
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase.from("parts").select("*").eq("id", id).maybeSingle();
@@ -142,6 +177,22 @@ export const listStockMovements = cache(async (): Promise<readonly StockMovement
     return (fallback.data as unknown as StockMovementWithDetails[]) ?? [];
   }
   return (data as unknown as StockMovementWithDetails[]) ?? [];
+});
+
+export const listPartSales = cache(async (): Promise<readonly PartSale[]> => {
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("part_sales")
+    .select(`
+      *,
+      seller:profiles!part_sales_sold_by_fkey(full_name, role),
+      customer:customers(*),
+      items:part_sale_items(*, part:parts(id, sku, name, current_stock, unit_cost))
+    `)
+    .order("sold_at", { ascending: false })
+    .limit(200);
+  if (error) return [];
+  return (data as unknown as PartSale[]) ?? [];
 });
 
 export const listPendingStockMovements = cache(async (): Promise<readonly StockMovementWithDetails[]> => {
@@ -244,6 +295,31 @@ export const listMotorcycleVariantsForSale = cache(async (): Promise<readonly {
     .order("cc", { ascending: true });
   type Row = Record<string, unknown>;
   return (data ?? []).filter((r: Row) => !!r.motorcycle);
+});
+
+export const listMotorcycleVariantsForStock = cache(async (): Promise<readonly {
+  id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
+  price: number; quantity: number; stock_status: string;
+  motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
+}[]> => {
+  const supabase = await createServerSupabaseClient();
+  const { data } = await supabase
+    .from("motorcycle_variants")
+    .select(`
+      id, motorcycle_id, cc, color_name, color_hex, price, quantity, stock_status, is_active,
+      motorcycle:motorcycles(id, name, slug, publication_status, brand:brands(id, name, slug, is_active))
+    `)
+    .eq("is_active", true)
+    .order("cc", { ascending: true });
+  type Row = {
+    motorcycle?: { brand?: { is_active?: boolean | null } | null } | null;
+  };
+  return ((data ?? []) as unknown as Row[])
+    .filter((r) => !!r.motorcycle && r.motorcycle.brand?.is_active !== false) as unknown as {
+      id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
+      price: number; quantity: number; stock_status: string;
+      motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
+    }[];
 });
 
 export async function getMotorcycleVariantForApprentice(): Promise<readonly {
@@ -587,3 +663,5 @@ export async function getMyRole(): Promise<StaffRole | null> {
     .from("profiles").select("role").eq("id", userId).maybeSingle();
   return (profile?.role as StaffRole) ?? null;
 }
+
+

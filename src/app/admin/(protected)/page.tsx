@@ -7,7 +7,7 @@ import { AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/adm
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import {
   listPendingSales, listPendingStockMovements, listSales, listCustomers,
-  listStockMovements, listActivityLogs, listMotorcycleVariantsForSale
+  listStockMovements, listActivityLogs, listMotorcycleVariantsForStock
 } from "@/lib/erp/queries";
 
 export const metadata = { title: "Dashboard" };
@@ -32,7 +32,7 @@ export default async function AdminDashboardPage() {
     roleTyped === "apprentice" ? Promise.resolve([] as Awaited<ReturnType<typeof listCustomers>>) : listCustomers(),
     listStockMovements(),
     roleTyped === "apprentice" || roleTyped === "manager" ? Promise.resolve([] as Awaited<ReturnType<typeof listActivityLogs>>) : listActivityLogs(20),
-    listMotorcycleVariantsForSale(),
+    listMotorcycleVariantsForStock(),
   ]);
 
   const totalSalesValue = sales.filter(s => s.sale_status === "completed" || s.sale_status === "approved")

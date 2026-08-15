@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
-import { listMotorcycleVariantsForSale, listParts } from "@/lib/erp/queries";
+import { listMotorcycleVariantsForStock, listParts } from "@/lib/erp/queries";
 import { createOrUpdatePart } from "@/app/admin/erp-actions/stock";
 import { PackageOpen, Plus, AlertTriangle, Package } from "lucide-react";
 
@@ -16,7 +16,7 @@ function variantModelLabel(variant: {
 }
 
 export default async function PartsPage() {
-  const [parts, variants] = await Promise.all([listParts(), listMotorcycleVariantsForSale()]);
+  const [parts, variants] = await Promise.all([listParts(), listMotorcycleVariantsForStock()]);
   const modelOptions = variants.filter((variant, index, all) => all.findIndex(item => item.motorcycle_id === variant.motorcycle_id) === index);
   const low = parts.filter(p => p.reorder_level != null && (p.current_stock ?? 0) <= p.reorder_level).length;
   return (
@@ -25,7 +25,12 @@ export default async function PartsPage() {
         eyebrow="Stock Management"
         title="Spare Parts Inventory"
         description="Manage showroom spare parts. Stock quantities are NOT changed directly here — use Stock Changes to request additions/subtractions, which must be approved by Admin before inventory is updated."
-        actions={<Link href="/admin/stock/movements" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">Request stock change</Link>}
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            <Link href="/admin/stock/part-sales" className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[#C62828] px-4 text-sm font-semibold text-white hover:bg-[#A91F1F]" style={{ color: "#FFFFFF" }}><span style={{ color: "#FFFFFF" }}>Sell parts</span></Link>
+            <Link href="/admin/stock/movements" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">Request stock change</Link>
+          </div>
+        )}
       />
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">

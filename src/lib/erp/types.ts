@@ -53,6 +53,52 @@ export interface Part {
   [key: string]: unknown;
 }
 
+export interface PartSaleItem {
+  readonly id: string;
+  readonly part_sale_id: string;
+  readonly part_id: string;
+  readonly sku_snapshot: string;
+  readonly name_snapshot: string;
+  readonly quantity: number;
+  readonly unit_price: number;
+  readonly line_total: number;
+  readonly created_at: string;
+  readonly part?: Part | null;
+  [key: string]: unknown;
+}
+
+export interface PartSale {
+  readonly id: string;
+  readonly sale_number: string;
+  readonly customer_id: string | null;
+  readonly customer_name: string | null;
+  readonly customer_phone: string | null;
+  readonly total_amount: number;
+  readonly paid_amount?: number;
+  readonly payment_method?: PaymentMethod | null;
+  readonly bank_id?: string | null;
+  readonly bank_name_snapshot?: string | null;
+  readonly transaction_reference?: string | null;
+  readonly notes: string | null;
+  readonly sale_status?: SaleStatus;
+  readonly approved_by?: string | null;
+  readonly approved_at?: string | null;
+  readonly rejected_by?: string | null;
+  readonly rejected_at?: string | null;
+  readonly rejection_reason?: string | null;
+  readonly stock_deducted?: boolean;
+  readonly receipt_generated?: boolean;
+  readonly receipt_generated_at?: string | null;
+  readonly sold_by: string | null;
+  readonly sold_at: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly customer?: Customer | null;
+  readonly seller?: { readonly full_name: string; readonly role: string } | null;
+  readonly items?: readonly PartSaleItem[] | null;
+  [key: string]: unknown;
+}
+
 export type StockMovementType =
   | "motorcycle_add"
   | "motorcycle_subtract"
@@ -255,6 +301,10 @@ export type ActivityAction =
   | "stock_applied"
   | "part_created"
   | "part_updated"
+  | "part_sale_created"
+  | "part_receipt_generated"
+  | "part_sale_rejected"
+  | "part_sale_approved"
   | "customer_created"
   | "customer_updated"
   | "seo_content_updated"
@@ -328,3 +378,4 @@ export interface ReceiptPrintPayload {
   readonly generated_at?: string;
   [key: string]: unknown;
 }
+

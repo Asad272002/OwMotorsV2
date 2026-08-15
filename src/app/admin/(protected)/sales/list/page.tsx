@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/admin-ui";
-import { listSales } from "@/lib/erp/queries";
-import { BadgeDollarSign, Bike, FileCheck, UserCheck, ArrowUpRight, Receipt } from "lucide-react";
+import { listPartSales, listSales } from "@/lib/erp/queries";
+import { BadgeDollarSign, Bike, FileCheck, ArrowUpRight, Receipt } from "lucide-react";
 
 export const metadata = { title: "All Sales" };
 
@@ -18,12 +18,12 @@ const statusMeta: Record<string, { badge: string; label: string }> = {
 };
 
 export default async function SalesListPage() {
-  const sales = await listSales();
+  const [sales, partSales] = await Promise.all([listSales(), listPartSales()]);
   const totals = {
-    total: sales.length,
-    pending: sales.filter(s => s.sale_status === "pending_approval").length,
-    approved: sales.filter(s => s.sale_status === "approved" || s.sale_status === "completed").length,
-    value: sales.filter(s => s.sale_status !== "rejected" && s.sale_status !== "cancelled").reduce((t, s) => t + (s.total_amount ?? 0), 0),
+    total: sales.length + partSales.length,
+    pending: sales.filter(s => s.sale_status === "pending_approval").length + partSales.filter(s => (s.sale_status ?? "pending_approval") === "pending_approval").length,
+    approved: sales.filter(s => s.sale_status === "approved" || s.sale_status === "completed").length + partSales.filter(s => (s.sale_status ?? "") === "approved" || (s.sale_status ?? "") === "completed").length,
+    value: sales.filter(s => s.sale_status !== "rejected" && s.sale_status !== "cancelled").reduce((t, s) => t + (s.total_amount ?? 0), 0) + partSales.filter(s => (s.sale_status ?? "pending_approval") !== "rejected").reduce((t, s) => t + (s.total_amount ?? 0), 0),
   };
   return (
     <div className="space-y-8">
@@ -113,6 +113,30 @@ export default async function SalesListPage() {
                         ) : null}
                       </div>
                     </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Spare-part sales register" description="Part sales use the same approval logic: pending first, stock deduction on Admin approval, receipt generation after approval.">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-[#E5E7EB] text-left text-sm">
+            <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]"><tr><th className="px-4 py-3">Sale #</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Items</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Receipt</th></tr></thead>
+            <tbody className="divide-y divide-[#E5E7EB]">
+              {partSales.length === 0 ? <tr><td colSpan={7} className="px-4 py-10 text-center text-[#6B7280]">No spare-part sales yet.</td></tr> : partSales.map((s) => {
+                const status = String(s.sale_status ?? "pending_approval");
+                return (
+                  <tr key={s.id} className="hover:bg-[#FAFAFA] align-top">
+                    <td className="px-4 py-3"><p className="font-mono text-xs font-bold text-[#111111]">{s.sale_number}</p><p className="mt-0.5 text-[11px] text-[#6B7280]">{new Date(s.sold_at).toLocaleDateString()}</p></td>
+                    <td className="px-4 py-3"><p className="font-semibold text-[#111111]">{s.customer?.full_name ?? s.customer_name ?? "Walk-in"}</p><p className="mt-0.5 text-xs font-mono text-[#6B7280]">{s.customer?.cnic ?? s.customer_phone ?? "-"}</p></td>
+                    <td className="px-4 py-3 text-xs text-[#374151]">{(s.items ?? []).map((item) => `${item.sku_snapshot} x ${item.quantity}`).join(" | ")}</td>
+                    <td className="px-4 py-3 text-right font-display text-lg font-bold text-[#C62828]">{pkr(s.total_amount)}</td>
+                    <td className="px-4 py-3 text-xs capitalize text-[#6B7280]">{String(s.payment_method ?? "cash").replaceAll("_", " ")}{s.bank_name_snapshot ? <p>{s.bank_name_snapshot}</p> : null}</td>
+                    <td className="px-4 py-3"><StatusBadge value={status === "pending_approval" ? "new" : status === "rejected" ? "out_of_stock" : status === "completed" ? "completed" : "in_stock"} label={status.replaceAll("_", " ")} /></td>
+                    <td className="px-4 py-3 text-right">{s.receipt_generated ? <Link href={`/admin/stock/part-sales/${s.id}`} className="inline-flex h-9 items-center rounded-md border border-[#E5E7EB] px-3 text-xs font-semibold text-[#374151] hover:bg-[#F7F7F8]">Receipt</Link> : <span className="text-xs text-[#9CA3AF]">-</span>}</td>
                   </tr>
                 );
               })}

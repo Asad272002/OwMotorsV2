@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/admin-ui";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { listMotorcycleVariantsForSale, listParts, listPartsForApprentice } from "@/lib/erp/queries";
+import { listMotorcycleVariantsForStock, listParts, listPartsForApprentice } from "@/lib/erp/queries";
 import { VariantAdminEditorTable, type VariantRowClient } from "./variant-table.client";
 import { Bike, AlertTriangle } from "lucide-react";
 
@@ -11,8 +12,10 @@ export default async function StockAvailabilityPage() {
   const role = actor?.profile.role ?? "apprentice";
   const isApprentice = role === "apprentice";
   const canEditPrices = role === "admin" || role === "developer";
+  const canRequestStock = role === "manager" || role === "admin" || role === "developer";
+  const canManageCatalog = role === "developer" || role === "admin" || role === "manager";
 
-  type VariantRow = Awaited<ReturnType<typeof listMotorcycleVariantsForSale>>[number] & { quantity?: number | null };
+  type VariantRow = Awaited<ReturnType<typeof listMotorcycleVariantsForStock>>[number] & { quantity?: number | null };
   type PartRow = {
     id: string; sku: string; name: string; description?: string | null; category?: string | null;
     unit?: string | null; location?: string | null; is_active?: boolean;
@@ -20,7 +23,7 @@ export default async function StockAvailabilityPage() {
     in_stock?: boolean;
   };
   const [variants, partsRaw] = await Promise.all([
-    listMotorcycleVariantsForSale() as unknown as Promise<VariantRow[]>,
+    listMotorcycleVariantsForStock() as unknown as Promise<VariantRow[]>,
     (isApprentice ? listPartsForApprentice() : listParts()) as Promise<PartRow[]>,
   ]);
   const parts: PartRow[] = partsRaw;
@@ -36,7 +39,13 @@ export default async function StockAvailabilityPage() {
         title={isApprentice ? "Bike & Parts Availability" : "Stock Availability Dashboard"}
         description={isApprentice
           ? "Apprentice view: shows availability as IN STOCK / OUT OF STOCK only. Exact quantities, unit costs, and reorder levels are hidden from Apprentice role per showroom SOP."
-          : "Exact stock quantities by variant and part. Apprentices see only a boolean here; Managers and above see full numbers."}
+          : "Exact stock quantities by variant and part. New draft bikes also appear here for stock setup before publishing."}
+        actions={isApprentice ? undefined : (
+          <>
+            {canManageCatalog ? <Link href="/admin/stock/bikes/new" className="inline-flex min-h-11 items-center rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">Add new bike</Link> : null}
+            {canRequestStock ? <Link href="/admin/stock/movements" className="inline-flex min-h-11 items-center rounded-md bg-[#111111] px-4 text-sm font-semibold text-white hover:bg-[#C62828]">Add stock</Link> : null}
+          </>
+        )}
       />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">

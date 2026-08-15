@@ -16,6 +16,7 @@ import {
   Menu,
   Newspaper,
   PackageSearch,
+  ShoppingCart,
   PanelsTopLeft,
   Search,
   Settings,
@@ -67,7 +68,9 @@ const NAV_GROUPS_ALL: readonly NavGroup[] = [
     label: "Stock Management",
     items: [
       { href: "/admin/stock/availability", label: "Stock Availability", description: "Check bike colors in stock", icon: PackageSearch, roles: ["developer", "admin", "manager", "apprentice"] },
+      { href: "/admin/stock/bikes/new", label: "Add Bike", description: "Simple backend bike stock entry", icon: Bike, roles: ["developer", "admin", "manager"] },
       { href: "/admin/stock/parts", label: "Spare Parts", description: "Inventory of parts & spares", icon: Tags, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/stock/part-sales", label: "Part Sales", description: "Sell spare parts & deduct stock", icon: ShoppingCart, roles: ["developer", "admin", "manager"] },
       { href: "/admin/stock/movements", label: "Stock Changes", description: "Add/remove stock requests", icon: History, roles: ["developer", "admin", "manager"] },
       { href: "/admin/stock/approvals", label: "Stock Approvals", description: "Approve stock add/remove", icon: FilePenLine, roles: ["developer", "admin"] },
     ],
@@ -214,7 +217,9 @@ function Breadcrumbs({ pathname }: Readonly<{ pathname: string }>) {
     receipts: "Receipts",
     customers: "Customers",
     availability: "Availability",
+    bikes: "Bikes",
     parts: "Spare Parts",
+    "part-sales": "Part Sales",
     movements: "Changes",
   };
 

@@ -87,6 +87,16 @@ export const variantSchema = z.object({
   isDefault: checkbox, isActive: checkbox,
 });
 
+
+export const simpleBikeStockSchema = z.object({
+  brandId: uuid,
+  modelName: z.string().trim().min(2, "Enter the bike model name.").max(140),
+  cc: z.coerce.number().int().min(25).max(2500),
+  colorName: z.string().trim().min(2, "Enter the color.").max(80),
+  colorHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, "Use a valid HEX color."),
+  price: money,
+  quantity: z.coerce.number().int().min(0).max(100000),
+});
 export const variantQuickUpdateSchema = z.object({
   variantId: uuid,
   price: z.preprocess((val) => {
@@ -235,6 +245,60 @@ export const stockMovementApprovalSchema = z.object({
     ctx.addIssue({ code: "custom", message: "Provide a reason when rejecting a stock change.", path: ["rejectionReason"] });
   }
 });
+
+const partSaleItemSchema = z.object({
+  partId: uuid,
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1.").max(10_000),
+  unitPrice: money,
+});
+
+export const partSaleSchema = z.object({
+  customerMode: z.enum(["existing", "new"]),
+  customerId: uuid.optional().or(z.literal("")),
+  newCustomer_fullName: z.string().trim().min(2).max(120).optional().or(z.literal("")),
+  newCustomer_cnic: z.string().trim().regex(/^([0-9]{5}-[0-9]{7}-[0-9]{1}|[0-9]{13})$/, "Enter a valid CNIC.").optional().or(z.literal("")),
+  newCustomer_phonePrimary: z.string().trim().regex(/^[+]?[0-9][0-9 ()-]{6,24}$/, "Enter a valid phone number.").optional().or(z.literal("")),
+  newCustomer_phoneSecondary: z.string().trim().max(30).optional().or(z.literal("")),
+  newCustomer_city: z.string().trim().max(80).optional().or(z.literal("")),
+  newCustomer_address: z.string().trim().max(500).optional().or(z.literal("")),
+  paymentMethod: z.enum(["cash", "bank_transfer", "cheque", "demand_draft", "pay_order", "easypaisa", "jazzcash", "sadapay", "card", "other"]),
+  bankId: uuid.optional().or(z.literal("")),
+  transactionReference: optionalString(z.string().trim().min(3).max(120)),
+  notes: optionalString(z.string().trim().max(1000)),
+  itemsJson: z.preprocess((value) => {
+    if (typeof value !== "string") return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, z.array(partSaleItemSchema).min(1, "Add at least one spare part to sell.").max(25)),
+}).superRefine((value, ctx) => {
+  if (value.customerMode === "existing" && !value.customerId) {
+    ctx.addIssue({ code: "custom", path: ["customerId"], message: "Select an existing customer." });
+  }
+  if (value.customerMode === "new") {
+    if (!value.newCustomer_fullName) ctx.addIssue({ code: "custom", path: ["newCustomer_fullName"], message: "Enter customer name." });
+    if (!value.newCustomer_cnic) ctx.addIssue({ code: "custom", path: ["newCustomer_cnic"], message: "Enter CNIC." });
+    if (!value.newCustomer_phonePrimary) ctx.addIssue({ code: "custom", path: ["newCustomer_phonePrimary"], message: "Enter phone number." });
+  }
+  if (["bank_transfer", "cheque", "demand_draft", "pay_order"].includes(value.paymentMethod) && !value.bankId) {
+    ctx.addIssue({ code: "custom", path: ["bankId"], message: "Select a bank for this payment method." });
+  }
+});
+
+export const partSaleApprovalSchema = z.object({
+  id: uuid,
+  decision: z.enum(["approved", "rejected"]),
+  rejectionReason: z.string().trim().min(3).max(1000).optional().or(z.literal("")),
+}).superRefine((value, ctx) => {
+  if (value.decision === "rejected" && (!value.rejectionReason || value.rejectionReason.length < 3)) {
+    ctx.addIssue({ code: "custom", path: ["rejectionReason"], message: "Provide a rejection reason." });
+  }
+});
+
+export const partReceiptGenerationSchema = z.object({ id: uuid });
 
 // =========================================
 // ERP: CUSTOMERS
@@ -406,3 +470,6 @@ export const saleApprovalSchema = z.object({
 
 export const receiptGenerationSchema = z.object({ saleId: uuid });
 export const receiptPrintSchema = z.object({ receiptId: uuid });
+
+
+

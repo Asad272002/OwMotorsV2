@@ -13,6 +13,10 @@ const ACTIVITY_ACTION_VALUES: readonly string[] = [
   "user_revoked",
   "part_created",
   "part_updated",
+  "part_sale_created",
+  "part_receipt_generated",
+  "part_sale_rejected",
+  "part_sale_approved",
   "variant_updated",
   "stock_requested",
   "stock_approved",
@@ -50,6 +54,9 @@ export function revalidateERP(): void {
   revalidatePath("/admin/sales/list");
   revalidatePath("/admin/sales/approvals");
   revalidatePath("/admin/stock/availability");
+  revalidatePath("/admin/stock/parts");
+  revalidatePath("/admin/stock/part-sales");
+  revalidatePath("/admin/stock/movements");
   revalidatePath("/admin/receipts");
   revalidatePath("/admin/activity");
 }

@@ -3,9 +3,118 @@
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { databaseAction, unauthorizedAction, validationAction } from "@/lib/admin/action-helpers";
 import type { AdminActionState } from "@/lib/admin/action-state";
-import { partSchema, stockMovementApprovalSchema, stockMovementSchema, variantQuickUpdateSchema } from "@/lib/admin/schemas";
+import { partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantQuickUpdateSchema } from "@/lib/admin/schemas";
 import { revalidateERP, serviceRoleClient, writeActivity } from "@/lib/admin/erp-action-runtime";
 import type { Database } from "@/lib/supabase/database.types";
+
+
+function slugifyStockName(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return slug || `bike-${Date.now()}`;
+}
+function generatePartSaleNumber(): string {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mi = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const ms = String(now.getMilliseconds()).padStart(3, "0");
+  const tail = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+  return `OWM-PART-${yy}${mm}${dd}${hh}${mi}${ss}${ms}${tail}`;
+}
+
+// ==============================================
+// SIMPLE BIKE STOCK ENTRY (MANAGER+)
+// ==============================================
+
+export async function createSimpleBikeStock(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = simpleBikeStockSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  const brandRes = await sb.from("brands").select("id, name, slug, is_active").eq("id", parsed.data.brandId).maybeSingle();
+  if (brandRes.error || !brandRes.data) return { status: "error", message: "Select a valid existing brand." };
+  const brand = brandRes.data as { id: string; name: string; slug?: string | null; is_active?: boolean | null };
+  if (brand.is_active === false) return { status: "error", message: "This brand is inactive. Activate the brand before adding stock." };
+
+  const modelName = parsed.data.modelName.trim();
+  const baseSlug = slugifyStockName(modelName);
+  let slug = baseSlug;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const existing = await sb.from("motorcycles").select("id").eq("slug", slug).maybeSingle();
+    if (!existing.data) break;
+    slug = `${baseSlug}-${String(Date.now()).slice(-5)}${attempt ? `-${attempt}` : ""}`;
+  }
+
+  const motorcycleInsert: Database["public"]["Tables"]["motorcycles"]["Insert"] = {
+    brand_id: parsed.data.brandId,
+    name: modelName,
+    slug,
+    short_description: `${brand.name} ${modelName} added from ERP stock entry.`,
+    full_description: `${brand.name} ${modelName} was added for showroom stock management. Complete public website content later if this model should be published online.`,
+    base_price: parsed.data.price,
+    publication_status: "draft",
+    is_featured: false,
+  };
+
+  const motorcycleRes = await sb.from("motorcycles").insert(motorcycleInsert).select("id").maybeSingle();
+  if (motorcycleRes.error || !motorcycleRes.data) return databaseAction("createSimpleBikeStock motorcycle", motorcycleRes.error ?? new Error("Bike was not created."));
+  const motorcycleId = (motorcycleRes.data as { id: string }).id;
+  const qty = Math.max(0, parsed.data.quantity);
+  const variantInsert: Database["public"]["Tables"]["motorcycle_variants"]["Insert"] = {
+    motorcycle_id: motorcycleId,
+    cc: parsed.data.cc,
+    color_name: parsed.data.colorName.trim(),
+    color_hex: parsed.data.colorHex.toUpperCase(),
+    price: parsed.data.price,
+    quantity: qty,
+    stock_status: qty > 0 ? "in_stock" : "out_of_stock",
+    is_default: true,
+    is_active: true,
+  };
+  const variantRes = await sb.from("motorcycle_variants").insert(variantInsert).select("id").maybeSingle();
+  if (variantRes.error || !variantRes.data) return databaseAction("createSimpleBikeStock variant", variantRes.error ?? new Error("Bike variant was not created."));
+
+  try {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "stock_applied",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} added bike stock item ${brand.name} ${modelName} ${parsed.data.cc}cc ${parsed.data.colorName} with ${qty} unit(s).`,
+      targetTable: "motorcycle_variants",
+      targetId: (variantRes.data as { id: string }).id,
+      metadata: {
+        event: "bike_stock_created",
+        brand_id: parsed.data.brandId,
+        brand_name: brand.name,
+        motorcycle_id: motorcycleId,
+        model_name: modelName,
+        cc: parsed.data.cc,
+        color_name: parsed.data.colorName,
+        price: parsed.data.price,
+        quantity: qty,
+        target_context: {
+          title: `${brand.name} ${modelName}`,
+          subtitle: `${parsed.data.cc}cc | ${parsed.data.colorName} | ${qty} in stock`,
+          amount: parsed.data.price,
+        },
+      },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: `${brand.name} ${modelName} added to stock with ${qty} unit(s).` };
+}
 
 // PARTS INVENTORY (MANAGER+)
 // ==============================================
@@ -34,7 +143,7 @@ export async function createOrUpdatePart(_prev: AdminActionState, formData: Form
     reorder_level: parsed.data.reorderLevel, unit_cost: parsed.data.unitCost,
     compatible_brand_id: compatibleBrandId,
     compatible_motorcycle_id: compatibleMotorcycleId,
-    location: parsed.data.location, is_active: parsed.data.isActive,
+    location: parsed.data.location, is_active: true,
     created_by: actor.userId
   };
   type DbErr = { code?: string; message?: string };
@@ -146,7 +255,7 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
       actorUserId: actor.userId,
       actorRole: actor.profile.role,
       action: "stock_requested",
-      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} created stock change request — ${parsed.data.movementType} × ${parsed.data.quantity}. Variant #${parsed.data.motorcycleVariantId?.slice(0, 8) ?? "-"} / Part #${parsed.data.partId?.slice(0, 8) ?? "-"}. Unit cost snapshot PKR ${resolvedUnitCostAtTime ?? 0}.`,
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} created stock change request - ${parsed.data.movementType} x ${parsed.data.quantity}. Variant #${parsed.data.motorcycleVariantId?.slice(0, 8) ?? "-"} / Part #${parsed.data.partId?.slice(0, 8) ?? "-"}. Unit cost snapshot PKR ${resolvedUnitCostAtTime ?? 0}.`,
       targetTable: "stock_movements",
       targetId: movementId,
       metadata: {
@@ -271,7 +380,7 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
         actorUserId: actor.userId,
         actorRole: actor.profile.role,
         action: "stock_approved",
-        summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} approved stock change #${parsed.data.id.slice(0, 8)} (${m.movement_type}) — variant +${variantDeltaQty}, parts +${partDeltaQty} net delta applied to inventory.`,
+        summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} approved stock change #${parsed.data.id.slice(0, 8)} (${m.movement_type}) - variant +${variantDeltaQty}, parts +${partDeltaQty} net delta applied to inventory.`,
         targetTable: "stock_movements",
         targetId: parsed.data.id,
         metadata: {
@@ -299,7 +408,7 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
         actorUserId: actor.userId,
         actorRole: actor.profile.role,
         action: "stock_rejected",
-        summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} rejected stock movement #${parsed.data.id.slice(0, 8)} — reason: ${(parsed.data.rejectionReason || "(none provided)").slice(0, 140)}`,
+        summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} rejected stock movement #${parsed.data.id.slice(0, 8)} - reason: ${(parsed.data.rejectionReason || "(none provided)").slice(0, 140)}`,
         targetTable: "stock_movements",
         targetId: parsed.data.id,
         metadata: { rejection_reason: parsed.data.rejectionReason ?? null },
@@ -316,6 +425,245 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
   };
 }
 
+// ==============================================
+// SPARE PART SALES (MANAGER+)
+// ==============================================
+
+export async function sellSpareParts(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = partSaleSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  type PartSaleCustomer = { id: string; full_name: string; cnic: string; phone_primary: string; phone_secondary?: string | null; address?: string | null; city?: string | null };
+  let customer: PartSaleCustomer | null = null;
+  if (parsed.data.customerMode === "existing") {
+    const customerRes = await sb
+      .from("customers")
+      .select("id, full_name, cnic, phone_primary, phone_secondary, address, city")
+      .eq("id", parsed.data.customerId || "")
+      .maybeSingle();
+    if (customerRes.error || !customerRes.data) return { status: "error", message: "Selected customer was not found.", errors: { customerId: ["Select a valid existing customer."] } };
+    customer = customerRes.data as PartSaleCustomer;
+  } else {
+    const cnic = String(parsed.data.newCustomer_cnic ?? "").replace(/[^0-9]/g, "");
+    const existing = await sb
+      .from("customers")
+      .select("id, full_name, cnic, phone_primary, phone_secondary, address, city")
+      .eq("cnic", cnic)
+      .maybeSingle();
+    if (!existing.error && existing.data) {
+      customer = existing.data as PartSaleCustomer;
+    } else {
+      const newCustomerRes = await sb
+        .from("customers")
+        .insert({
+          full_name: String(parsed.data.newCustomer_fullName ?? "").trim(),
+          cnic,
+          phone_primary: String(parsed.data.newCustomer_phonePrimary ?? "").trim(),
+          phone_secondary: String(parsed.data.newCustomer_phoneSecondary ?? "").trim() || null,
+          city: String(parsed.data.newCustomer_city ?? "").trim() || null,
+          address: String(parsed.data.newCustomer_address ?? "").trim() || null,
+          created_by: actor.userId,
+        })
+        .select("id, full_name, cnic, phone_primary, phone_secondary, address, city")
+        .maybeSingle();
+      if (newCustomerRes.error || !newCustomerRes.data) return databaseAction("sellSpareParts create customer", newCustomerRes.error ?? new Error("Customer was not created."));
+      customer = newCustomerRes.data as PartSaleCustomer;
+    }
+  }
+  const merged = new Map<string, { partId: string; quantity: number; unitPrice: number }>();
+  for (const item of parsed.data.itemsJson) {
+    const existing = merged.get(item.partId);
+    if (existing) {
+      existing.quantity += item.quantity;
+      existing.unitPrice = item.unitPrice;
+    } else {
+      merged.set(item.partId, { ...item });
+    }
+  }
+
+  const items = Array.from(merged.values());
+  const partIds = items.map((item) => item.partId);
+  const partsRes = await sb
+    .from("parts")
+    .select("id, sku, name, current_stock, unit_cost, is_active")
+    .in("id", partIds);
+  if (partsRes.error) return databaseAction("sellSpareParts load parts", partsRes.error);
+
+  type PartStockRow = { id: string; sku: string; name: string; current_stock: number; unit_cost: number; is_active: boolean };
+  const partRows = (partsRes.data ?? []) as PartStockRow[];
+  const byId = new Map(partRows.map((part) => [part.id, part]));
+
+  for (const item of items) {
+    const part = byId.get(item.partId);
+    if (!part) return { status: "error", message: "One selected spare part no longer exists.", errors: { itemsJson: ["Refresh the page and select the part again."] } };
+    const available = Number(part.current_stock ?? 0);
+    if (available < item.quantity) {
+      return {
+        status: "error",
+        message: `${part.sku} has only ${available} unit(s) available.`,
+        errors: { itemsJson: [`Reduce ${part.name} quantity to ${available} or less.`] },
+      };
+    }
+  }
+
+  const saleNumber = generatePartSaleNumber();
+  const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  let bankNameSnapshot: string | null = null;
+  if (parsed.data.bankId) {
+    const bankRes = await sb.from("banks").select("name").eq("id", parsed.data.bankId).maybeSingle();
+    if (bankRes.error || !bankRes.data) return { status: "error", message: "Selected payment bank was not found.", errors: { bankId: ["Select a valid bank."] } };
+    bankNameSnapshot = String((bankRes.data as { name?: string | null }).name ?? "").trim() || null;
+  }
+
+  const saleInsert: Database["public"] ["Tables"] ["part_sales"] ["Insert"] = {
+    sale_number: saleNumber,
+    customer_name: customer?.full_name ?? null,
+    customer_phone: customer?.phone_primary ?? null,
+    customer_id: customer?.id ?? null,
+    total_amount: total,
+    notes: parsed.data.notes ?? null,
+    sold_by: actor.userId,
+    sale_status: "pending_approval",
+    payment_method: parsed.data.paymentMethod as Database["public"] ["Enums"] ["payment_method"],
+    bank_id: parsed.data.bankId || null,
+    bank_name_snapshot: bankNameSnapshot,
+    transaction_reference: parsed.data.transactionReference ?? null,
+    paid_amount: total,
+    stock_deducted: false,
+    receipt_generated: false,
+  };
+
+  const saleRes = await sb.from("part_sales").insert(saleInsert).select("id, sale_number").maybeSingle();
+  if (saleRes.error || !saleRes.data) return databaseAction("sellSpareParts create sale", saleRes.error ?? new Error("Part sale was not created."));
+
+  const saleId = (saleRes.data as { id: string }).id;
+  const itemInserts: Database["public"]["Tables"]["part_sale_items"]["Insert"][] = items.map((item) => {
+    const part = byId.get(item.partId) as PartStockRow;
+    return {
+      part_sale_id: saleId,
+      part_id: item.partId,
+      sku_snapshot: part.sku,
+      name_snapshot: part.name,
+      quantity: item.quantity,
+      unit_price: item.unitPrice,
+      line_total: item.quantity * item.unitPrice,
+    };
+  });
+
+  const itemRes = await sb.from("part_sale_items").insert(itemInserts);
+  if (itemRes.error) return databaseAction("sellSpareParts create items", itemRes.error);
+try {
+    const itemSummary = itemInserts.map((item) => `${item.sku_snapshot} x ${item.quantity}`).join(", ");
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "part_sale_created",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} requested spare-part sale ${saleNumber}: ${itemSummary} for PKR ${total.toLocaleString("en-PK")}.`,
+      targetTable: "part_sales",
+      targetId: saleId,
+      metadata: {
+        event: "part_sale_created",
+        sale_number: saleNumber,
+        total_amount: total,
+        customer_id: customer?.id ?? null,
+        customer_name: customer?.full_name ?? null,
+        customer_cnic: customer?.cnic ?? null,
+        payment_method: parsed.data.paymentMethod,
+        bank_id: parsed.data.bankId || null,
+        bank_name_snapshot: bankNameSnapshot,
+        transaction_reference: parsed.data.transactionReference ?? null,
+        approval_status: "pending_approval",
+        items: itemInserts.map((item) => ({
+          part_id: item.part_id,
+          sku: item.sku_snapshot,
+          name: item.name_snapshot,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          line_total: item.line_total,
+        })),
+        target_context: {
+          title: saleNumber,
+          subtitle: `${items.length} spare part line(s) sold | Customer: ${customer?.full_name ?? "-"}`,
+          amount: total,
+        },
+      },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: `Spare part sale ${saleNumber} submitted for admin approval. Stock will deduct only after approval.` };
+}
+
+export async function decidePartSale(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+  const parsed = partSaleApprovalSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  const saleRes = await sb
+    .from("part_sales")
+    .select("*, items:part_sale_items(*)")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  if (saleRes.error || !saleRes.data) return databaseAction("decidePartSale load", saleRes.error ?? new Error("Part sale not found."));
+
+  const sale = saleRes.data as unknown as { id: string; sale_number: string; sale_status: string; stock_deducted?: boolean; items?: Array<{ part_id: string; quantity: number; sku_snapshot: string; name_snapshot: string }> };
+  if (sale.sale_status !== "pending_approval") return { status: "error", message: "This part sale has already been processed." };
+  const now = new Date().toISOString();
+
+  if (parsed.data.decision === "rejected") {
+    const upd = await sb.from("part_sales").update({ sale_status: "rejected", rejected_by: actor.userId, rejected_at: now, rejection_reason: parsed.data.rejectionReason || null }).eq("id", parsed.data.id);
+    if (upd.error) return databaseAction("decidePartSale reject", upd.error);
+    await writeActivity({ actorUserId: actor.userId, actorRole: actor.profile.role, action: "part_sale_rejected", summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} rejected part sale ${sale.sale_number}: ${parsed.data.rejectionReason || "No reason"}.`, targetTable: "part_sales", targetId: sale.id, metadata: { sale_number: sale.sale_number, rejection_reason: parsed.data.rejectionReason ?? null } });
+    revalidateERP();
+    return { status: "success", message: "Part sale rejected. Stock was not changed." };
+  }
+
+  const items = sale.items ?? [];
+  for (const item of items) {
+    const cur = await sb.from("parts").select("current_stock").eq("id", item.part_id).maybeSingle();
+    if (cur.error || !cur.data) return { status: "error", message: `${item.sku_snapshot} was not found in parts stock.` };
+    const current = Number((cur.data as { current_stock?: number }).current_stock ?? 0);
+    if (current < Number(item.quantity)) return { status: "error", message: `${item.sku_snapshot} has only ${current} unit(s), cannot approve ${item.quantity}.` };
+  }
+
+  for (const item of items) {
+    const cur = await sb.from("parts").select("current_stock").eq("id", item.part_id).maybeSingle();
+    const current = Number((cur.data as { current_stock?: number } | null)?.current_stock ?? 0);
+    const next = Math.max(0, current - Number(item.quantity));
+    const updPart = await sb.from("parts").update({ current_stock: next }).eq("id", item.part_id);
+    if (updPart.error) return databaseAction("decidePartSale deduct part", updPart.error);
+  }
+
+  const upd = await sb.from("part_sales").update({ sale_status: "approved", approved_by: actor.userId, approved_at: now, stock_deducted: true }).eq("id", parsed.data.id);
+  if (upd.error) return databaseAction("decidePartSale approve", upd.error);
+  await writeActivity({ actorUserId: actor.userId, actorRole: actor.profile.role, action: "part_sale_approved", summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} approved part sale ${sale.sale_number}; stock deducted for ${items.length} line(s).`, targetTable: "part_sales", targetId: sale.id, metadata: { sale_number: sale.sale_number, items } });
+  revalidateERP();
+  return { status: "success", message: "Part sale approved. Stock deducted and receipt can now be generated." };
+}
+
+export async function generatePartSaleReceipt(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+  const parsed = partReceiptGenerationSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+  const sb = serviceRoleClient();
+  const saleRes = await sb.from("part_sales").select("id, sale_number, sale_status, receipt_generated").eq("id", parsed.data.id).maybeSingle();
+  if (saleRes.error || !saleRes.data) return databaseAction("generatePartSaleReceipt load", saleRes.error ?? new Error("Part sale not found."));
+  const sale = saleRes.data as { id: string; sale_number: string; sale_status: string; receipt_generated?: boolean };
+  if (sale.sale_status !== "approved" && sale.sale_status !== "completed") return { status: "error", message: "Admin approval is required before receipt generation." };
+  const now = new Date().toISOString();
+  const upd = await sb.from("part_sales").update({ sale_status: "completed", receipt_generated: true, receipt_generated_at: now }).eq("id", parsed.data.id);
+  if (upd.error) return databaseAction("generatePartSaleReceipt", upd.error);
+  await writeActivity({ actorUserId: actor.userId, actorRole: actor.profile.role, action: "part_receipt_generated", summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} generated receipt for part sale ${sale.sale_number}.`, targetTable: "part_sales", targetId: sale.id, metadata: { sale_number: sale.sale_number } });
+  revalidateERP();
+  return { status: "success", message: "Part receipt generated. You can print it now." };
+}
 // ==============================================
 // VARIANT PRICE / STOCK QUICK ADMIN UPDATE
 // Admin + Developer only. Manager/Apprentice blocked.
@@ -364,7 +712,7 @@ export async function updateVariantDetails(_prev: AdminActionState, formData: Fo
       actorUserId: actor.userId,
       actorRole: actor.profile.role,
       action: "variant_updated",
-      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} updated variant pricing/stock for variant #${parsed.data.variantId.slice(0, 8)} price PKR ${row.price ?? 0} → PKR ${payload.price ?? 0}; qty ${row.quantity ?? 0} → ${typeof payload.quantity === "number" ? payload.quantity : "(unchanged)"}.`,
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} updated variant pricing/stock for variant #${parsed.data.variantId.slice(0, 8)} price PKR ${row.price ?? 0} -> PKR ${payload.price ?? 0}; qty ${row.quantity ?? 0} -> ${typeof payload.quantity === "number" ? payload.quantity : "(unchanged)"}.`,
       targetTable: "motorcycle_variants",
       targetId: parsed.data.variantId,
       metadata: {
@@ -381,3 +729,4 @@ export async function updateVariantDetails(_prev: AdminActionState, formData: Fo
 }
 
 // ==============================================
+

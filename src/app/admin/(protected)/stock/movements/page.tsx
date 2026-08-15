@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/admin-ui";
-import { listStockMovements, listParts, listMotorcycleVariantsForSale } from "@/lib/erp/queries";
+import { listStockMovements, listParts, listMotorcycleVariantsForStock } from "@/lib/erp/queries";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { History, PackageOpen, Bike, ShieldCheck } from "lucide-react";
 import { StockMovementRequestForm } from "./request-form.client";
@@ -34,7 +34,7 @@ export default async function StockMovementsPage() {
   const [movements, parts, variants] = await Promise.all([
     listStockMovements(),
     listParts(),
-    listMotorcycleVariantsForSale(),
+    listMotorcycleVariantsForStock(),
   ]);
   const pending = movements.filter(m => m.approval_status === "pending_approval").length;
 

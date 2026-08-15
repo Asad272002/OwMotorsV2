@@ -46,7 +46,7 @@ export type ActivityAction =
   | "payment_recorded"
   | "receipt_generated" | "receipt_printed"
   | "stock_requested" | "stock_approved" | "stock_rejected" | "stock_applied"
-  | "part_created" | "part_updated"
+  | "part_created" | "part_updated" | "part_sale_created" | "part_receipt_generated" | "part_sale_rejected" | "part_sale_approved"
   | "customer_created" | "customer_updated"
   | "seo_content_updated"
   | "login_success" | "login_failure" | "password_set_by_admin";
@@ -857,6 +857,132 @@ export type Database = {
           { foreignKeyName: "parts_created_by_fkey"; columns: ["created_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
           { foreignKeyName: "parts_compatible_brand_id_fkey"; columns: ["compatible_brand_id"]; isOneToOne: false; referencedRelation: "brands"; referencedColumns: ["id"] },
           { foreignKeyName: "parts_compatible_motorcycle_id_fkey"; columns: ["compatible_motorcycle_id"]; isOneToOne: false; referencedRelation: "motorcycles"; referencedColumns: ["id"] },
+        ];
+      };
+      part_sales: {
+        Row: {
+          id: string;
+          sale_number: string;
+          customer_name: string | null;
+          customer_phone: string | null;
+          customer_id: string | null;
+          total_amount: number;
+                    sale_status: "pending_approval" | "approved" | "rejected" | "completed";
+          payment_method: PaymentMethod;
+          bank_id: string | null;
+          bank_name_snapshot: string | null;
+          transaction_reference: string | null;
+          paid_amount: number;
+          approved_by: string | null;
+          approved_at: string | null;
+          rejected_by: string | null;
+          rejected_at: string | null;
+          rejection_reason: string | null;
+          stock_deducted: boolean;
+          receipt_generated: boolean;
+          receipt_generated_at: string | null;notes: string | null;
+          sold_by: string | null;
+          sold_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          sale_number: string;
+          customer_name?: string | null;
+          customer_phone?: string | null;
+          customer_id?: string | null;
+          total_amount?: number;
+                    sale_status?: "pending_approval" | "approved" | "rejected" | "completed";
+          payment_method?: PaymentMethod;
+          bank_id?: string | null;
+          bank_name_snapshot?: string | null;
+          transaction_reference?: string | null;
+          paid_amount?: number;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          rejected_by?: string | null;
+          rejected_at?: string | null;
+          rejection_reason?: string | null;
+          stock_deducted?: boolean;
+          receipt_generated?: boolean;
+          receipt_generated_at?: string | null;notes?: string | null;
+          sold_by?: string | null;
+          sold_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          sale_number?: string;
+          customer_name?: string | null;
+          customer_phone?: string | null;
+          customer_id?: string | null;
+          total_amount?: number;
+                    sale_status?: "pending_approval" | "approved" | "rejected" | "completed";
+          payment_method?: PaymentMethod;
+          bank_id?: string | null;
+          bank_name_snapshot?: string | null;
+          transaction_reference?: string | null;
+          paid_amount?: number;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          rejected_by?: string | null;
+          rejected_at?: string | null;
+          rejection_reason?: string | null;
+          stock_deducted?: boolean;
+          receipt_generated?: boolean;
+          receipt_generated_at?: string | null;notes?: string | null;
+          sold_by?: string | null;
+          sold_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          { foreignKeyName: "part_sales_sold_by_fkey"; columns: ["sold_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "part_sales_customer_id_fkey"; columns: ["customer_id"]; isOneToOne: false; referencedRelation: "customers"; referencedColumns: ["id"] },
+          { foreignKeyName: "part_sales_bank_id_fkey"; columns: ["bank_id"]; isOneToOne: false; referencedRelation: "banks"; referencedColumns: ["id"] },
+          { foreignKeyName: "part_sales_approved_by_fkey"; columns: ["approved_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "part_sales_rejected_by_fkey"; columns: ["rejected_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ];
+      };
+      part_sale_items: {
+        Row: {
+          id: string;
+          part_sale_id: string;
+          part_id: string;
+          sku_snapshot: string;
+          name_snapshot: string;
+          quantity: number;
+          unit_price: number;
+          line_total: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          part_sale_id: string;
+          part_id: string;
+          sku_snapshot: string;
+          name_snapshot: string;
+          quantity: number;
+          unit_price?: number;
+          line_total?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          part_sale_id?: string;
+          part_id?: string;
+          sku_snapshot?: string;
+          name_snapshot?: string;
+          quantity?: number;
+          unit_price?: number;
+          line_total?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          { foreignKeyName: "part_sale_items_part_sale_id_fkey"; columns: ["part_sale_id"]; isOneToOne: false; referencedRelation: "part_sales"; referencedColumns: ["id"] },
+          { foreignKeyName: "part_sale_items_part_id_fkey"; columns: ["part_id"]; isOneToOne: false; referencedRelation: "parts"; referencedColumns: ["id"] },
         ];
       };
       stock_movements: {
