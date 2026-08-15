@@ -49,7 +49,7 @@ export default async function PartsPage() {
           <p className="mt-2 font-display text-2xl font-bold text-[#111111]">{low}</p>
         </div>
       </section>
-      <AdminPanel title="All parts" description="Edit part details here. Stock qty updates require stock movement + admin approval.">
+      <AdminPanel title="All parts" description="SKU, fitment, reorder level, and cost.">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[#E5E7EB] text-sm">
             <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
@@ -105,7 +105,7 @@ export default async function PartsPage() {
                             <div><label className={adminLabelClass}>Reorder level</label><input name="reorderLevel" type="number" min={0} defaultValue={p.reorder_level ?? ""} className={adminInputClass + " min-h-9"} /></div>
                             <div><label className={adminLabelClass}>Unit cost (PKR)</label><input name="unitCost" type="number" min={0} defaultValue={p.unit_cost ?? ""} className={adminInputClass + " min-h-9"} /></div>
                           </div>
-                          <p className="text-[10px] text-[#6B7280]">Note: current_stock is NOT editable here; use Stock Changes + Admin approval.</p>
+                          <p className="text-[10px] text-[#6B7280]">Use Stock Changes for quantity.</p>
                         </AdminForm>
                       </div>
                     </details>
@@ -119,7 +119,7 @@ export default async function PartsPage() {
       <section id="new-part">
         <AdminPanel
           title="Add a new part"
-          description="Create the SKU first, then request stock additions via Stock Changes. Stock qty will start at 0."
+          description="Create a spare-part SKU."
           actions={<a href="#new-part" className="inline-flex items-center gap-2 rounded-md bg-[#C62828] px-3 py-1.5 text-[11px] font-semibold text-white"><Plus aria-hidden="true" className="h-3.5 w-3.5" />New part</a>}
         >
           <AdminForm action={createOrUpdatePart} submitLabel="Create part" className="grid grid-cols-1 gap-5 md:grid-cols-4">
@@ -136,7 +136,7 @@ export default async function PartsPage() {
             </div>
             <div className="md:col-span-2"><label className={adminLabelClass}>Description</label><textarea name="description" className={adminInputClass + " min-h-[72px]"} placeholder="Fitment, brand, packaging etc." /></div>
             <div><label className={adminLabelClass}>Reorder level (low stock alert)</label><input name="reorderLevel" type="number" min={0} className={adminInputClass} placeholder="5" /></div>
-            <div className="flex items-end"><span className="text-xs text-[#6B7280]">Stock quantity for new parts defaults to 0. Request addition in Stock Changes.</span></div>
+            <div className="flex items-end"><span className="text-xs text-[#6B7280]">Quantity starts at 0.</span></div>
           </AdminForm>
         </AdminPanel>
       </section>

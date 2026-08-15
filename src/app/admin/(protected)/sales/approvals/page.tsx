@@ -66,12 +66,12 @@ export default async function SaleApprovalsPage() {
         title="Sale Approvals"
         description={(pending.length + pendingPartSales.length)
           ? `${pending.length + pendingPartSales.length} sales waiting for your approval. Approve to unlock receipt generation AND subtract 1 from current stock. Reject with a reason so the manager can correct.`
-          : "No sales pending approval. When a manager creates a sale, it appears here for your review before inventory is affected."}
+          : "No sales pending approval."}
         actions={<span className="inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-[#B45309]"><ShieldCheck aria-hidden="true" className="h-4 w-4" />Approval = stock -1 + receipt unlocked</span>}
       />
 
       {pendingPartSales.length > 0 ? (
-        <AdminPanel title="Spare-part sale approvals" description="Approve to deduct spare-part stock and unlock receipt generation. Reject if customer, payment, or stock details are wrong.">
+        <AdminPanel title="Spare-part sale approvals" description="Approve or reject spare-part sale requests.">
           <div className="space-y-4">
             {pendingPartSales.map((sale) => (
               <div key={sale.id} className="rounded-lg border border-[#E5E7EB] bg-white p-5 shadow-sm">

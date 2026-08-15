@@ -461,3 +461,37 @@ header.sticky :is(a, button, summary):focus-visible,
     display: none !important;
   }
 }
+
+@keyframes admin-toast-pop {
+  0% { opacity: 0; transform: translateY(18px) scale(0.96); }
+  70% { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes admin-role-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(198 40 40 / 0.22); }
+  50% { box-shadow: 0 0 0 5px rgb(198 40 40 / 0); }
+}
+
+@keyframes admin-badge-shine {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(120%); }
+}
+
+.admin-toast-enter {
+  animation: admin-toast-pop 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.admin-role-badge {
+  position: relative;
+  overflow: hidden;
+  animation: admin-role-pulse 2.4s ease-in-out infinite;
+}
+
+.admin-role-badge::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  content: "";
+  animation: admin-badge-shine 3.2s ease-in-out infinite;
+}

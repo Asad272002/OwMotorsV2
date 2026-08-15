@@ -30,7 +30,7 @@ export default async function SalesListPage() {
       <AdminPageHeader
         eyebrow="Sales"
         title="All Sales Records"
-        description="Complete register of every sale in the system, from pending approval to completed with receipt. Track status, payment split, and chasis number."
+        description="Bike and spare-part sales in one place."
         actions={<Link href="/admin/sales/new" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#C62828] bg-[#C62828] px-4 text-sm font-semibold text-white hover:bg-[#A91F1F]"><BadgeDollarSign aria-hidden="true" className="h-4 w-4" />Record new sale</Link>}
       />
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -47,7 +47,7 @@ export default async function SalesListPage() {
           </div>
         ))}
       </section>
-      <AdminPanel title="Sales register" description="Most recent first. Click a row to open its receipt (once approved).">
+      <AdminPanel title="Sales register" description="Most recent bike sales.">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[#E5E7EB] text-left text-sm">
             <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
@@ -121,7 +121,7 @@ export default async function SalesListPage() {
         </div>
       </AdminPanel>
 
-      <AdminPanel title="Spare-part sales register" description="Part sales use the same approval logic: pending first, stock deduction on Admin approval, receipt generation after approval.">
+      <AdminPanel title="Spare-part sales register" description="Most recent spare-part sales.">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[#E5E7EB] text-left text-sm">
             <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]"><tr><th className="px-4 py-3">Sale #</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Items</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Receipt</th></tr></thead>

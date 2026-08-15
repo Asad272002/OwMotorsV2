@@ -47,7 +47,7 @@ export default async function PartSalesPage() {
       <AdminPageHeader
         eyebrow="Stock Management"
         title="Sell Spare Parts"
-        description="Create counter sales for spare parts. The request goes to Admin approval first; stock deducts only after approval, then receipt generation is unlocked."
+        description="Create spare-part sales with customer, payment, and receipt tracking."
         actions={(
           <>
             <Link href="/admin/stock/parts" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]"><PackageOpen aria-hidden="true" className="h-4 w-4" />Manage parts</Link>
@@ -74,13 +74,13 @@ export default async function PartSalesPage() {
         </div>
       </section>
 
-      <AdminPanel title="New spare-part sale" description="Record customer, payment method, and cart items. Admin approval is required before stock changes.">
+      <AdminPanel title="New spare-part sale" description="Customer, payment, and cart.">
         {sellableParts.length === 0 ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-[#92400E]">No spare parts are in stock. Add parts from Spare Parts, then request stock addition from Stock Changes.</div>
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-[#92400E]">No spare parts are in stock.</div>
         ) : <PartSaleForm parts={parts} customers={customers} banks={banks} />}
       </AdminPanel>
 
-      <AdminPanel title="Recent spare-part sales" description="Most recent first. Pending sales wait for Admin approval before stock deduction and receipt generation.">
+      <AdminPanel title="Recent spare-part sales" description="Most recent first.">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[#E5E7EB] text-sm">
             <thead className="bg-[#F7F7F8] text-left text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">

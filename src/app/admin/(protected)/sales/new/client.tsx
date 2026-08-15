@@ -48,6 +48,17 @@ function pkr(n: number | string): string {
   return "PKR " + num.toLocaleString("en-PK");
 }
 
+
+function formatCnic(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 13);
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
+function formatPakPhone(value: string): string {
+  return value.replace(/[^0-9+]/g, "").slice(0, value.startsWith("+") ? 13 : 11);
+}
 function generateInternalTxnRef(): string {
   const now = new Date();
   const pad = (n: number, len = 2) => String(n).padStart(len, "0");
@@ -246,7 +257,7 @@ export default function NewSalePageClient(props: {
       <AdminPageHeader
         eyebrow="Sales Workflow"
         title="Record New Bike Sale"
-        description="Select the bike, confirm the buyer, record payment, then send the sale for approval. Stock and receipt generation happen only after approval."
+        description="A guided bike-sale flow: bike, buyer, payment, approval."
         actions={<Link href="/admin/sales/list" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">View all sales</Link>}
       />
 
@@ -290,7 +301,7 @@ export default function NewSalePageClient(props: {
         </div>
       </div>
 
-      <StepPanel step={1} title="Bike & Customer" description="Choose the exact variant and buyer for this sale." status={stepStates[0]} delay={80} actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
+      <StepPanel step={1} title="Bike & Customer" description="Select the stock item and customer." status={stepStates[0]} delay={80} actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
         <div className="space-y-6">
           <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">
             <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
@@ -298,7 +309,7 @@ export default function NewSalePageClient(props: {
                 <label className={adminLabelClass}>Search bike</label>
                 <div className="relative mt-2">
                   <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
-                  <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} bg-white pl-10`} placeholder="Search by brand, model, color, or CC..." />
+                  <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} bg-white pl-10`} placeholder="Search bike model, brand, color, or CC" />
                 </div>
               </div>
               <div className="rounded-md border border-[#E5E7EB] bg-white px-4 py-3 lg:min-w-[320px]">
@@ -318,7 +329,7 @@ export default function NewSalePageClient(props: {
             </div>
             <div className="mt-3 flex items-center justify-between text-xs text-[#6B7280]">
               <span>{filteredVariants.length} matching variant(s)</span>
-              <span>Scroll inside this list when inventory grows</span>
+              <span>List stays scrollable as stock grows</span>
             </div>
             <div className="mt-2 grid max-h-[340px] grid-cols-1 gap-2 overflow-y-auto rounded-md border border-[#E5E7EB] bg-white p-2 md:grid-cols-2 xl:grid-cols-3">
               {filteredVariants.length === 0 ? (
@@ -416,18 +427,18 @@ export default function NewSalePageClient(props: {
                   {hasErr("newCustomer_fullName") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_fullName")}</p> : null}
                 </div>
                 <div>
-                  <label htmlFor="newSale-newCustomer_cnic" className={adminLabelClass}>CNIC <span className="text-[#C62828]">*</span> (13 digits or 5-7-1)</label>
-                  <input id="newSale-newCustomer_cnic" data-error-path="newCustomer_cnic" name="customer.cnic" form="main-sale-form" required pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" className={`${adminInputClass} ${hasErr("newCustomer_cnic") ? ERROR_INPUT_RING : ""}`} placeholder="3520212345671 or 35202-1234567-1" value={newCustomer.cnic} onChange={e => setNewCustomer(prev => ({ ...prev, cnic: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_cnic" className={adminLabelClass}>CNIC <span className="text-[#C62828]">*</span></label>
+                  <input id="newSale-newCustomer_cnic" data-error-path="newCustomer_cnic" name="customer.cnic" form="main-sale-form" required inputMode="numeric" maxLength={15} pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" className={`${adminInputClass} font-mono ${hasErr("newCustomer_cnic") ? ERROR_INPUT_RING : ""}`} placeholder="35202-1234567-1" value={newCustomer.cnic} onChange={e => setNewCustomer(prev => ({ ...prev, cnic: formatCnic(e.target.value) }))} />
                   {hasErr("newCustomer_cnic") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_cnic")}</p> : null}
                 </div>
                 <div>
                   <label htmlFor="newSale-newCustomer_phonePrimary" className={adminLabelClass}>Primary phone</label>
-                  <input id="newSale-newCustomer_phonePrimary" data-error-path="newCustomer_phonePrimary" name="customer.phonePrimary" form="main-sale-form" pattern="^\+?[0-9 -]{10,20}$" className={`${adminInputClass} ${hasErr("newCustomer_phonePrimary") ? ERROR_INPUT_RING : ""}`} placeholder="+92 300 1234567" value={newCustomer.phonePrimary} onChange={e => setNewCustomer(prev => ({ ...prev, phonePrimary: e.target.value }))} />
+                  <input id="newSale-newCustomer_phonePrimary" data-error-path="newCustomer_phonePrimary" name="customer.phonePrimary" form="main-sale-form" inputMode="tel" maxLength={14} pattern="^\+?[0-9 -]{10,20}$" className={`${adminInputClass} ${hasErr("newCustomer_phonePrimary") ? ERROR_INPUT_RING : ""}`} placeholder="+92 300 1234567" value={newCustomer.phonePrimary} onChange={e => setNewCustomer(prev => ({ ...prev, phonePrimary: formatPakPhone(e.target.value) }))} />
                   {hasErr("newCustomer_phonePrimary") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_phonePrimary")}</p> : null}
                 </div>
                 <div>
                   <label htmlFor="newSale-newCustomer_phoneSecondary" className={adminLabelClass}>Secondary phone</label>
-                  <input id="newSale-newCustomer_phoneSecondary" data-error-path="newCustomer_phoneSecondary" name="customer.phoneSecondary" form="main-sale-form" className={`${adminInputClass} ${hasErr("newCustomer_phoneSecondary") ? ERROR_INPUT_RING : ""}`} placeholder="Optional" value={newCustomer.phoneSecondary} onChange={e => setNewCustomer(prev => ({ ...prev, phoneSecondary: e.target.value }))} />
+                  <input id="newSale-newCustomer_phoneSecondary" data-error-path="newCustomer_phoneSecondary" name="customer.phoneSecondary" form="main-sale-form" inputMode="tel" maxLength={14} className={`${adminInputClass} ${hasErr("newCustomer_phoneSecondary") ? ERROR_INPUT_RING : ""}`} placeholder="Optional" value={newCustomer.phoneSecondary} onChange={e => setNewCustomer(prev => ({ ...prev, phoneSecondary: formatPakPhone(e.target.value) }))} />
                 </div>
                 <div>
                   <label htmlFor="newSale-newCustomer_city" className={adminLabelClass}>City / Town</label>
@@ -445,7 +456,7 @@ export default function NewSalePageClient(props: {
 
           <div>
             <label className={adminLabelClass}>Optional sales notes</label>
-            <textarea value={saleNotes ?? ""} onChange={e => setSaleNotes(e.target.value)} name="notes" form="main-sale-form" className={adminInputClass + " min-h-[84px]"} placeholder="Anything the admin or another manager should know about this sale." />
+            <textarea value={saleNotes ?? ""} onChange={e => setSaleNotes(e.target.value)} name="notes" form="main-sale-form" className={adminInputClass + " min-h-[84px]"} placeholder="Optional internal note." />
           </div>
         </div>
       </StepPanel>
@@ -453,7 +464,7 @@ export default function NewSalePageClient(props: {
       <StepPanel
         step={2}
         title="Payments"
-        description="Record every payment method used. Multiple payment splits and banks are supported."
+        description="Match the paid amount to the sale total."
         status={stepStates[1]}
         delay={160}
         actions={
@@ -518,7 +529,7 @@ export default function NewSalePageClient(props: {
             </div>
           ) : null}
           <button type="button" onClick={addPayment} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-dashed border-[#C62828]/50 px-4 text-sm font-semibold text-[#C62828] hover:bg-[#FEF2F2]">
-            <Plus aria-hidden="true" className="h-4 w-4" />Add another payment split (e.g. second bank, partial cash)
+            <Plus aria-hidden="true" className="h-4 w-4" />Add payment split
           </button>
         </div>
       </StepPanel>
@@ -526,7 +537,7 @@ export default function NewSalePageClient(props: {
       <StepPanel
         step={3}
         title="Submit for Admin approval"
-        description="Once submitted, Admin must approve before: 1) stock is deducted, 2) bike status becomes SOLD, 3) receipt generation is unlocked."
+        description="Send the checked sale to Admin."
         status={stepStates[2]}
         delay={240}
       >

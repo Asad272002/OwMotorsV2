@@ -25,6 +25,16 @@ const paymentOptions = [
 function pkr(value: number): string {
   return "PKR " + (Number(value) || 0).toLocaleString("en-PK");
 }
+function formatCnic(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 13);
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
+function formatPakPhone(value: string): string {
+  return value.replace(/[^0-9+]/g, "").slice(0, value.startsWith("+") ? 13 : 11);
+}
 
 function makeRow(parts: readonly Part[]): CartRow {
   const first = parts.find((part) => (part.current_stock ?? 0) > 0);
@@ -38,6 +48,7 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [customerSearch, setCustomerSearch] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [newCustomer, setNewCustomer] = useState({ fullName: "", cnic: "", phonePrimary: "", phoneSecondary: "", city: "", address: "" });
 
   const byId = useMemo(() => new Map(sellableParts.map((part) => [part.id, part])), [sellableParts]);
   const filteredCustomers = useMemo(() => {
@@ -70,7 +81,7 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
   }
 
   return (
-    <AdminForm action={sellSpareParts} submitLabel="Submit for approval" pendingLabel="Submitting..." confirmMessage="Submit this spare-part sale for Admin approval? Stock will not deduct until approval." className="space-y-6">
+    <AdminForm action={sellSpareParts} submitLabel="Submit for approval" pendingLabel="Submitting..." confirmMessage="Submit this part sale for approval?" className="space-y-6">
       <input type="hidden" name="itemsJson" value={itemsJson} />
       <input type="hidden" name="customerMode" value={customerMode} />
       <input type="hidden" name="customerId" value={customerMode === "existing" ? customerId : ""} />
@@ -109,12 +120,12 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div><label className={adminLabelClass}>Full name</label><input name="newCustomer_fullName" className={adminInputClass} required={customerMode === "new"} placeholder="Customer full name" /></div>
-            <div><label className={adminLabelClass}>CNIC</label><input name="newCustomer_cnic" className={adminInputClass} required={customerMode === "new"} pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" placeholder="3520212345671" /></div>
-            <div><label className={adminLabelClass}>Phone primary</label><input name="newCustomer_phonePrimary" className={adminInputClass} required={customerMode === "new"} placeholder="03001234567" /></div>
-            <div><label className={adminLabelClass}>Phone secondary</label><input name="newCustomer_phoneSecondary" className={adminInputClass} /></div>
-            <div><label className={adminLabelClass}>City</label><input name="newCustomer_city" className={adminInputClass} /></div>
-            <div><label className={adminLabelClass}>Address</label><input name="newCustomer_address" className={adminInputClass} /></div>
+            <div><label className={adminLabelClass}>Full name</label><input name="newCustomer_fullName" className={adminInputClass} required={customerMode === "new"} placeholder="Customer full name" value={newCustomer.fullName} onChange={(event) => setNewCustomer((current) => ({ ...current, fullName: event.target.value }))} /></div>
+            <div><label className={adminLabelClass}>CNIC</label><input name="newCustomer_cnic" className={adminInputClass + " font-mono"} required={customerMode === "new"} inputMode="numeric" maxLength={15} pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" placeholder="35202-1234567-1" value={newCustomer.cnic} onChange={(event) => setNewCustomer((current) => ({ ...current, cnic: formatCnic(event.target.value) }))} /></div>
+            <div><label className={adminLabelClass}>Phone primary</label><input name="newCustomer_phonePrimary" className={adminInputClass + " font-mono"} required={customerMode === "new"} inputMode="tel" maxLength={14} placeholder="03001234567" value={newCustomer.phonePrimary} onChange={(event) => setNewCustomer((current) => ({ ...current, phonePrimary: formatPakPhone(event.target.value) }))} /></div>
+            <div><label className={adminLabelClass}>Phone secondary</label><input name="newCustomer_phoneSecondary" className={adminInputClass + " font-mono"} inputMode="tel" maxLength={14} value={newCustomer.phoneSecondary} onChange={(event) => setNewCustomer((current) => ({ ...current, phoneSecondary: formatPakPhone(event.target.value) }))} /></div>
+            <div><label className={adminLabelClass}>City</label><input name="newCustomer_city" className={adminInputClass} value={newCustomer.city} onChange={(event) => setNewCustomer((current) => ({ ...current, city: event.target.value }))} /></div>
+            <div><label className={adminLabelClass}>Address</label><input name="newCustomer_address" className={adminInputClass} value={newCustomer.address} onChange={(event) => setNewCustomer((current) => ({ ...current, address: event.target.value }))} /></div>
           </div>
         )}
       </section>
@@ -137,7 +148,7 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
           </div>
           <div>
             <label className={adminLabelClass}>Txn / reference</label>
-            <input name="transactionReference" className={adminInputClass} placeholder="Optional receipt, cheque, or transfer ref" />
+            <input name="transactionReference" className={adminInputClass} placeholder="Receipt / cheque / transfer ref" />
           </div>
           <div className="rounded-md border border-[#E5E7EB] bg-[#F7F7F8] px-4 py-3">
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6B7280]">Sale total</p>
@@ -168,10 +179,10 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={() => setRows((current) => [...current, makeRow(sellableParts)])} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]"><Plus aria-hidden="true" className="h-4 w-4" /> Add another part</button>
-        <div className="flex items-center gap-3"><StatusBadge value={hasStockIssue ? "out_of_stock" : "new"} label={hasStockIssue ? "Fix stock first" : "Pending approval after submit"} /><p className="text-sm font-semibold text-[#111111]">{pkr(total)}</p></div>
+        <div className="flex items-center gap-3"><StatusBadge value={hasStockIssue ? "out_of_stock" : "new"} label={hasStockIssue ? "Fix stock first" : "Ready for approval"} /><p className="text-sm font-semibold text-[#111111]">{pkr(total)}</p></div>
       </div>
 
-      <div><label className={adminLabelClass}>Sale notes</label><textarea name="notes" className={adminInputClass + " min-h-24 py-3"} placeholder="Optional invoice note, fitter note, or customer reference" /></div>
+      <div><label className={adminLabelClass}>Sale notes</label><textarea name="notes" className={adminInputClass + " min-h-24 py-3"} placeholder="Optional note" /></div>
     </AdminForm>
   );
 }

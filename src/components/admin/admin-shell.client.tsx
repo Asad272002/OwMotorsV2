@@ -49,60 +49,65 @@ type NavGroup = {
 const NAV_GROUPS_ALL: readonly NavGroup[] = [
   {
     id: "overview",
-    label: "Overview",
-    items: [{ href: "/admin", label: "Dashboard", description: "Priorities and recent activity", icon: LayoutDashboard }],
+    label: "Home",
+    items: [{ href: "/admin", label: "Dashboard", description: "Overview", icon: LayoutDashboard }],
   },
   {
     id: "sales",
-    label: "Sales & Customers",
+    label: "Sales",
     items: [
-      { href: "/admin/sales/new", label: "New Sale", description: "Initiate bike sale, record payments", icon: BadgeDollarSign, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/sales/approvals", label: "Sale Approvals", description: "Approve pending sales & receipts", icon: FilePenLine, roles: ["developer", "admin"] },
-      { href: "/admin/sales/list", label: "All Sales", description: "Complete sales list & history", icon: Store, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/receipts", label: "Receipts", description: "Generate & print payment receipts", icon: FilePenLine, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/customers", label: "Customers", description: "Customer database & lookup by CNIC", icon: Users, roles: ["developer", "admin", "manager", "apprentice"] },
-    ],
-  },
-  {
-    id: "stock",
-    label: "Stock Management",
-    items: [
-      { href: "/admin/stock/availability", label: "Stock Availability", description: "Check bike colors in stock", icon: PackageSearch, roles: ["developer", "admin", "manager", "apprentice"] },
-      { href: "/admin/stock/bikes/new", label: "Add Bike", description: "Simple backend bike stock entry", icon: Bike, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/stock/parts", label: "Spare Parts", description: "Inventory of parts & spares", icon: Tags, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/stock/part-sales", label: "Part Sales", description: "Sell spare parts & deduct stock", icon: ShoppingCart, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/stock/movements", label: "Stock Changes", description: "Add/remove stock requests", icon: History, roles: ["developer", "admin", "manager"] },
-      { href: "/admin/stock/approvals", label: "Stock Approvals", description: "Approve stock add/remove", icon: FilePenLine, roles: ["developer", "admin"] },
+      { href: "/admin/sales/new", label: "Sell Bike", description: "Bike sale", icon: BadgeDollarSign, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/stock/part-sales", label: "Sell Parts", description: "Spare-part sale", icon: ShoppingCart, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/sales/list", label: "All Sales", description: "Sales register", icon: Store, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/receipts", label: "Receipts", description: "Receipts", icon: FilePenLine, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/customers", label: "Customers", description: "Customer records", icon: Users, roles: ["developer", "admin", "manager", "apprentice"] },
     ],
   },
   {
     id: "inventory",
-    label: "Inventory & SEO (Developer)",
+    label: "Inventory",
     items: [
-      { href: "/admin/inventory/motorcycles", label: "Motorcycles", description: "Products, variants, and publishing", icon: Bike, roles: ["developer"] },
-      { href: "/admin/inventory/blog", label: "Blog", description: "Articles, guides, and publishing", icon: Newspaper, roles: ["developer"] },
-      { href: "/admin/inventory/storefront-content", label: "Storefront Content", description: "Homepage details and Brands page", icon: FilePenLine, roles: ["developer"] },
-      { href: "/admin/inventory/homepage-display", label: "Banners & Rows", description: "Campaigns, product rows, and menu logos", icon: PanelsTopLeft, roles: ["developer"] },
-      { href: "/admin/inventory/brands", label: "Brands", description: "Brand identity and visibility", icon: Store, roles: ["developer"] },
-      { href: "/admin/inventory/categories", label: "Categories", description: "Motorcycle browsing categories", icon: Tags, roles: ["developer"] },
-      { href: "/admin/inventory/stock", label: "SEO Stock & Pricing", description: "Availability and price review", icon: BadgeDollarSign, roles: ["developer"] },
-      { href: "/admin/inventory/media", label: "Media", description: "Campaign and product images", icon: Images, roles: ["developer"] },
+      { href: "/admin/stock/availability", label: "Stock Availability", description: "Current stock", icon: PackageSearch, roles: ["developer", "admin", "manager", "apprentice"] },
+      { href: "/admin/stock/bikes/new", label: "Add Bike", description: "New bike model", icon: Bike, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/stock/parts", label: "Spare Parts", description: "Parts catalog", icon: Tags, roles: ["developer", "admin", "manager"] },
+      { href: "/admin/stock/movements", label: "Stock Changes", description: "Stock requests", icon: History, roles: ["developer", "admin", "manager"] },
+    ],
+  },
+  {
+    id: "approvals",
+    label: "Approvals",
+    items: [
+      { href: "/admin/sales/approvals", label: "Sales Approval", description: "Approve sales", icon: FilePenLine, roles: ["developer", "admin"] },
+      { href: "/admin/stock/approvals", label: "Stock Approval", description: "Approve stock", icon: FilePenLine, roles: ["developer", "admin"] },
     ],
   },
   {
     id: "leads",
     label: "Leads",
     items: [
-      { href: "/admin/inquiries", label: "Contact Inquiries", description: "Review dealership messages", icon: Inbox, roles: ["developer", "admin"] },
+      { href: "/admin/inquiries", label: "Contact Inquiries", description: "Messages", icon: Inbox, roles: ["developer", "admin"] },
     ],
   },
   {
     id: "administration",
-    label: "Administration",
+    label: "Admin",
     items: [
-      { href: "/admin/users-access", label: "Users & Access", description: "Create/manage team logins", icon: Users, roles: ["developer", "admin"] },
-      { href: "/admin/settings", label: "Settings", description: "Dealership preferences", icon: Settings, roles: ["developer", "admin"] },
-      { href: "/admin/activity", label: "Activity Logs", description: "Sale, stock & user audit trail", icon: History, roles: ["developer", "admin"] },
+      { href: "/admin/users-access", label: "Users & Access", description: "Team access", icon: Users, roles: ["developer", "admin"] },
+      { href: "/admin/activity", label: "Activity Logs", description: "Audit trail", icon: History, roles: ["developer", "admin"] },
+      { href: "/admin/settings", label: "Settings", description: "Settings", icon: Settings, roles: ["developer", "admin"] },
+    ],
+  },
+  {
+    id: "website",
+    label: "Website",
+    items: [
+      { href: "/admin/inventory/motorcycles", label: "Website Bikes", description: "Public catalog", icon: Bike, roles: ["developer"] },
+      { href: "/admin/inventory/brands", label: "Website Brands", description: "Brand pages", icon: Store, roles: ["developer"] },
+      { href: "/admin/inventory/categories", label: "Website Categories", description: "Category pages", icon: Tags, roles: ["developer"] },
+      { href: "/admin/inventory/homepage-display", label: "Homepage Display", description: "Homepage rows", icon: PanelsTopLeft, roles: ["developer"] },
+      { href: "/admin/inventory/storefront-content", label: "Storefront Content", description: "Page copy", icon: FilePenLine, roles: ["developer"] },
+      { href: "/admin/inventory/blog", label: "Blog", description: "Articles", icon: Newspaper, roles: ["developer"] },
+      { href: "/admin/inventory/media", label: "Media", description: "Images", icon: Images, roles: ["developer"] },
     ],
   },
 ] as const;
@@ -148,22 +153,22 @@ function SidebarContent({
         const open = openGroups.has(group.id);
         const groupContainsActive = group.items.some((item) => isActivePath(pathname, item.href));
         return (
-          <section key={group.id} className="mb-3" aria-labelledby={`admin-nav-${group.id}`}>
+          <section key={group.id} className="mb-4 border-t border-[#F1F2F4] pt-3 first:border-t-0 first:pt-0" aria-labelledby={`admin-nav-${group.id}`}>
             <button
               type="button"
               id={`admin-nav-${group.id}`}
               aria-expanded={open}
               aria-controls={`admin-nav-items-${group.id}`}
               onClick={() => onToggleGroup(group.id)}
-              className={`flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-[11px] font-bold uppercase tracking-[0.16em] transition-colors duration-200 focus-visible:outline-offset-0 ${
-                groupContainsActive ? "text-[#C62828]" : "text-[#6B7280] hover:bg-[#F7F7F8] hover:text-[#111111]"
+              className={`flex min-h-10 w-full items-center justify-between rounded-md px-3 text-left text-[11px] font-bold uppercase tracking-[0.18em] transition-colors duration-200 focus-visible:outline-offset-0 ${
+                groupContainsActive ? "bg-[#FEF2F2] text-[#C62828]" : "text-[#6B7280] hover:bg-[#F7F7F8] hover:text-[#111111]"
               }`}
             >
               <span>{group.label}</span>
               <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
             </button>
             {open ? (
-              <ul id={`admin-nav-items-${group.id}`} className="mt-1 space-y-1">
+              <ul id={`admin-nav-items-${group.id}`} className="mt-1 space-y-1 pl-1">
                 {group.items.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   const Icon = item.icon;
@@ -173,7 +178,7 @@ function SidebarContent({
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         onClick={onNavigate}
-                        className={`group flex min-h-11 items-center gap-3 rounded-md border-l-[3px] px-3 py-2 text-sm font-semibold transition-colors duration-200 ${
+                        className={`group flex min-h-10 items-center gap-3 rounded-md border-l-[3px] px-3 py-2 text-sm font-semibold transition-colors duration-200 ${
                           active
                             ? "border-[#C62828] bg-[#FEF2F2] text-[#C62828]"
                             : "border-transparent text-[#374151] hover:border-[#E5E7EB] hover:bg-[#F7F7F8] hover:text-[#111111]"
@@ -264,7 +269,7 @@ function CommandPalette({ onClose, groups }: Readonly<{ onClose: () => void; gro
         <h2 id="admin-command-title" className="sr-only">Search the admin dashboard</h2>
         <div className="flex items-center gap-3 border-b border-[#E5E7EB] px-4">
           <Search aria-hidden="true" className="h-5 w-5 text-[#6B7280]" />
-          <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} className="min-h-14 min-w-0 flex-1 bg-transparent text-base text-[#111111] outline-none placeholder:text-[#9CA3AF]" placeholder="Search inventory, leads, or settings…" />
+          <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} className="min-h-14 min-w-0 flex-1 bg-transparent text-base text-[#111111] outline-none placeholder:text-[#9CA3AF]" placeholder="Search sales, stock, customers..." />
           <button type="button" onClick={onClose} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#6B7280] hover:bg-[#F7F7F8] hover:text-[#111111]" aria-label="Close search"><X aria-hidden="true" className="h-5 w-5" /></button>
         </div>
         <div className="max-h-[55vh] overflow-y-auto p-2">
@@ -275,7 +280,7 @@ function CommandPalette({ onClose, groups }: Readonly<{ onClose: () => void; gro
                 return <li key={item.href}><button type="button" onClick={() => { onClose(); router.push(item.href); }} className="flex min-h-14 w-full items-center gap-3 rounded-md px-3 text-left transition-colors hover:bg-[#FEF2F2] focus-visible:bg-[#FEF2F2]"><span className="flex h-9 w-9 items-center justify-center rounded-md border border-[#E5E7EB] text-[#C62828]"><Icon aria-hidden="true" className="h-[18px] w-[18px]" /></span><span><strong className="block text-sm text-[#111111]">{item.label}</strong><span className="mt-0.5 block text-xs text-[#6B7280]">{item.description}</span></span></button></li>;
               })}
             </ul>
-          ) : <div className="px-4 py-12 text-center"><PackageSearch aria-hidden="true" className="mx-auto h-7 w-7 text-[#9CA3AF]" /><p className="mt-3 text-sm font-semibold text-[#111111]">No matching workspace</p><p className="mt-1 text-xs text-[#6B7280]">Try a motorcycle, brand, category, or lead.</p></div>}
+          ) : <div className="px-4 py-12 text-center"><PackageSearch aria-hidden="true" className="mx-auto h-7 w-7 text-[#9CA3AF]" /><p className="mt-3 text-sm font-semibold text-[#111111]">No result</p><p className="mt-1 text-xs text-[#6B7280]">Try another search.</p></div>}
         </div>
         <footer className="flex items-center justify-between border-t border-[#E5E7EB] bg-[#F7F7F8] px-4 py-2.5 text-[11px] text-[#6B7280]"><span>Navigation search</span><span>Esc to close</span></footer>
       </section>
@@ -287,6 +292,7 @@ function UserMenu({ name, role }: Readonly<{ name: string; role: string }>) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "OW";
+  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
 
   useEffect(() => {
     function closeOnOutsideClick(event: MouseEvent) {
@@ -299,13 +305,13 @@ function UserMenu({ name, role }: Readonly<{ name: string; role: string }>) {
   return (
     <div ref={containerRef} className="relative" onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
       <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="menu" className="flex min-h-11 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-[#F7F7F8] sm:px-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#111111] text-xs font-bold text-white">{initials}</span>
-        <span className="hidden max-w-36 sm:block"><strong className="block truncate text-xs text-[#111111]">{name}</strong><span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">{role}</span></span>
+        <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[#111111] text-xs font-bold text-white"><span>{initials}</span><span className="admin-role-badge absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-[#C62828]" /></span>
+        <span className="hidden max-w-40 sm:block"><strong className="block truncate text-xs text-[#111111]">{name}</strong><span className="mt-1 inline-flex items-center rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#C62828]">{roleLabel}</span></span>
         <ChevronDown aria-hidden="true" className={`hidden h-4 w-4 text-[#6B7280] transition-transform sm:block ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
         <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-md border border-[#E5E7EB] bg-white p-2 shadow-xl">
-          <div className="border-b border-[#E5E7EB] px-3 py-3"><p className="truncate text-sm font-semibold text-[#111111]">{name}</p><p className="mt-1 text-xs capitalize text-[#6B7280]">{role} access</p></div>
+          <div className="border-b border-[#E5E7EB] px-3 py-3"><p className="truncate text-sm font-semibold text-[#111111]">{name}</p><span className="admin-role-badge mt-2 inline-flex rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#C62828]">{roleLabel} access</span></div>
           <Link href="/" target="_blank" rel="noreferrer" className="mt-2 flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#374151] hover:bg-[#F7F7F8]" role="menuitem"><ExternalLink aria-hidden="true" className="h-4 w-4" />View website</Link>
           <form action={logoutAdmin}><button type="submit" role="menuitem" className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-semibold text-[#C62828] hover:bg-[#FEF2F2]"><CircleUserRound aria-hidden="true" className="h-4 w-4" />Sign out</button></form>
         </div>
@@ -321,7 +327,6 @@ export function AdminShell({ children, actorName, actorRole }: Readonly<{ childr
   const [searchOpen, setSearchOpen] = useState(false);
 
   const groups = useMemo(() => buildNavForRole(actorRole), [actorRole]);
-  const groupKey = useMemo(() => groups.map(g => g.id).join("|"), [groups]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(groups.map((group) => group.id)));
 
   function toggleGroup(id: string) {
@@ -376,7 +381,7 @@ export function AdminShell({ children, actorName, actorRole }: Readonly<{ childr
         <header className="sticky top-0 z-40 flex h-[72px] items-center gap-3 border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <button type="button" onClick={() => setMobileOpen(true)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-[#E5E7EB] text-[#111111] hover:border-[#C62828] hover:bg-[#FEF2F2] hover:text-[#C62828] lg:hidden" aria-label="Open admin navigation"><Menu aria-hidden="true" className="h-5 w-5" /></button>
           <button type="button" onClick={() => setSearchOpen(true)} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md border border-[#E5E7EB] bg-[#F7F7F8] px-3 text-left text-sm text-[#6B7280] transition-colors hover:border-[#C62828] hover:bg-white sm:max-w-xl" aria-label="Search admin dashboard">
-            <Search aria-hidden="true" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">Search sales, customers, stock, or settings</span><span className="ml-auto hidden items-center gap-1 rounded border border-[#D1D5DB] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#6B7280] sm:inline-flex"><Command aria-hidden="true" className="h-3 w-3" />K</span>
+            <Search aria-hidden="true" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">Search sales, stock, customers</span><span className="ml-auto hidden items-center gap-1 rounded border border-[#D1D5DB] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#6B7280] sm:inline-flex"><Command aria-hidden="true" className="h-3 w-3" />K</span>
           </button>
           <Link href="/admin#attention" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#6B7280] transition-colors hover:bg-[#FEF2F2] hover:text-[#C62828]" aria-label="Review dashboard attention summary"><Bell aria-hidden="true" className="h-5 w-5" /><span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full border-2 border-white bg-[#D97706]" /><span className="sr-only">Attention summary</span></Link>
           <UserMenu name={actorName} role={actorRole} />

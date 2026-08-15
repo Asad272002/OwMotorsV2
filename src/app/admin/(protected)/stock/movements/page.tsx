@@ -43,7 +43,7 @@ export default async function StockMovementsPage() {
       <AdminPageHeader
         eyebrow="Stock Management"
         title="Stock Additions / Subtractions"
-        description="Request stock changes here. Each change goes to Admin for approval. After Admin approves, live inventory quantities update automatically. You cannot change actual stock directly."
+        description="Request additions or subtractions for bike and spare-part stock."
         actions={<Link href="/admin/stock/approvals" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">Admin approvals ({pending})</Link>}
       />
 
@@ -65,11 +65,11 @@ export default async function StockMovementsPage() {
         </div>
       </section>
 
-      <AdminPanel title="Request new stock change" description="Choose one stock target, then record addition or subtraction. Bike stock and spare-part stock are separated so the wrong target cannot be submitted by accident.">
+      <AdminPanel title="Request new stock change" description="Select the stock item and movement type.">
         <StockMovementRequestForm variants={variants} parts={parts} isAdminOrDev={isAdminOrDev} />
       </AdminPanel>
 
-      <AdminPanel title="History of all stock changes" description="Most recent first. Click approvals to decide pending changes.">
+      <AdminPanel title="History of all stock changes" description="Most recent first.">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-[#E5E7EB] text-sm">
             <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">

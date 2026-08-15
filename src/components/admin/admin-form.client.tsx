@@ -62,15 +62,42 @@ function ConfirmationDialog({
   );
 }
 
+
+function isSaleSuccess(state: AdminActionState): boolean {
+  if (state.status !== "success" || !state.message) return false;
+  return /sale|receipt|payment/i.test(state.message);
+}
+
+function playSoftPing() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(720, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(980, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+    window.setTimeout(() => void ctx.close(), 280);
+  } catch { /* browsers may block audio; toast still shows */ }
+}
 function ActionToast({ state }: Readonly<{ state: AdminActionState }>) {
   const [dismissedMessage, setDismissedMessage] = useState<string | null>(null);
   if (!state.message || dismissedMessage === state.message) return null;
   const success = state.status === "success";
+  const saleSuccess = isSaleSuccess(state);
   const Icon = success ? CheckCircle2 : TriangleAlert;
   return (
-    <div role={success ? "status" : "alert"} aria-live={success ? "polite" : "assertive"} className={`fixed bottom-4 right-4 z-[85] flex w-[min(24rem,calc(100vw-2rem))] items-start gap-3 rounded-lg border bg-white p-4 shadow-xl ${success ? "border-green-200" : "border-red-200"}`}>
+    <div role={success ? "status" : "alert"} aria-live={success ? "polite" : "assertive"} className={`admin-toast-enter fixed bottom-4 right-4 z-[85] flex w-[min(26rem,calc(100vw-2rem))] items-start gap-3 rounded-lg border bg-white p-4 shadow-2xl ${success ? "border-green-200" : "border-red-200"} ${saleSuccess ? "ring-4 ring-green-500/10" : ""}`}>
       <Icon aria-hidden="true" className={`mt-0.5 h-5 w-5 shrink-0 ${success ? "text-[#15803D]" : "text-[#C62828]"}`} />
-      <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#111111]">{success ? "Saved" : "Action needed"}</p><p className="mt-1 text-xs leading-5 text-[#6B7280]">{state.message}</p></div>
+      <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-[#111111]">{saleSuccess ? "Sale updated" : success ? "Saved" : "Action needed"}</p><p className="mt-1 text-xs leading-5 text-[#6B7280]">{state.message}</p></div>
       <button type="button" onClick={() => setDismissedMessage(state.message)} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded text-[#6B7280] hover:bg-[#F7F7F8] hover:text-[#111111]" aria-label="Dismiss notification"><X aria-hidden="true" className="h-4 w-4" /></button>
     </div>
   );
@@ -80,7 +107,7 @@ export function AdminForm({
   action,
   children,
   submitLabel = "Save changes",
-  pendingLabel = "Saving…",
+  pendingLabel = "Saving...",
   confirmMessage,
   destructive = false,
   showStatus,
@@ -107,6 +134,12 @@ export function AdminForm({
   const formRef = useRef<HTMLFormElement>(null);
   const errorsEmittedRef = useRef<AdminActionState | null>(null);
   const displayStatus = showStatus ?? (!destructive && className !== "contents");
+  const pingedMessageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isSaleSuccess(state) || pingedMessageRef.current === state.message) return;
+    pingedMessageRef.current = state.message;
+    playSoftPing();
+  }, [state]);
 
   useEffect(() => {
     if (!state.errors || Object.keys(state.errors).length === 0) {
