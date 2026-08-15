@@ -34,6 +34,9 @@ yarn-error.log*
 
 # local agent tooling
 /.agents/
+/.dbg/
+debug-*.md
+trae-debug-log-*.ndjson
 
 # env files (can opt-in for committing if needed)
 .env*

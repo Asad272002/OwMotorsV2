@@ -22,7 +22,7 @@ type ActivityRowInsert = Database["public"]["Tables"]["activity_logs"]["Insert"]
 // before the insert so writes never fail due to enum invalid input.
 const ACTIVITY_ACTION_VALUES: readonly string[] = [
   "login_success",
-  "login_failed",
+  "login_failure",
   "user_created",
   "user_updated",
   "user_revoked",
@@ -33,12 +33,13 @@ const ACTIVITY_ACTION_VALUES: readonly string[] = [
   "stock_approved",
   "stock_rejected",
   "stock_applied",
-  "sale_submitted",
+  "sale_requested",
   "sale_approved",
   "sale_rejected",
   "sale_completed",
   "sale_cancelled",
   "receipt_generated",
+  "receipt_printed",
   "inventory_adjusted",
 ];
 
@@ -656,6 +657,46 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const parsed = saleInitiateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return validationAction(parsed.error);
 
+  const dbgTraceId = (typeof crypto !== "undefined" && "randomUUID" in (crypto ?? {}) ? crypto.randomUUID() : `trace-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const dbg = (hypothesisId: string, msg: string, data: Record<string, unknown>) => {
+    // #region debug-point A:initiateSale
+    void (async () => {
+      try {
+        const fs = await import("node:fs");
+        const p = ".dbg/partial-payment-sale.env";
+        let u = "http://127.0.0.1:7777/event";
+        let s = "partial-payment-sale";
+        try {
+          const e = fs.readFileSync(p, "utf8");
+          u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || u;
+          s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || s;
+        } catch { /* noop */ }
+        await fetch(u, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: s,
+            runId: "pre-fix",
+            hypothesisId,
+            traceId: dbgTraceId,
+            location: "erp-actions.ts:initiateSale",
+            msg: `[DEBUG] ${msg}`,
+            data,
+            ts: Date.now(),
+          }),
+        }).catch(() => {});
+      } catch { /* noop */ }
+    })();
+    // #endregion
+  };
+  dbg("A", "entry", {
+    actorRole: actor.profile.role,
+    useExistingCustomer: parsed.data.useExistingCustomer,
+    chasisNumber: String(parsed.data.chasisNumber ?? "").trim().toUpperCase(),
+    paymentsJsonLen: Array.isArray(parsed.data.paymentsJson) ? parsed.data.paymentsJson.length : null,
+    paymentsJsonTotalRaw: Array.isArray(parsed.data.paymentsJson) ? parsed.data.paymentsJson.reduce((t, p) => t + (Number((p as { amount?: unknown }).amount) || 0), 0) : null,
+  });
+
   const sb = serviceRoleClient();
 
   // 1. Determine customer (create new inline if needed)
@@ -711,6 +752,18 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
         rejected: "rejected earlier",
         cancelled: "cancelled",
       };
+      dbg("B", "blocked by chassis-duplicate", { chasisNorm, existingSaleId: firstRow.id, existingSaleStatus: firstRow.sale_status, existingSaleRef: firstRow.receipt_number ?? null });
+      try {
+        await writeActivity({
+          actorUserId: actor.userId,
+          actorRole: actor.profile.role,
+          action: "sale_requested",
+          summary: `Sale submission blocked (chasis duplicate): ${actor.profile.full_name ?? actor.userId} attempted chasis ${chasisNorm} but it already exists in sale ${firstRow.receipt_number ?? firstRow.id}.`,
+          targetTable: "sales",
+          targetId: firstRow.id,
+          metadata: { outcome: "blocked", reason: "chasis_duplicate", attempted_chasis: chasisNorm, existing_sale_id: firstRow.id, existing_sale_status: firstRow.sale_status, existing_sale_ref: firstRow.receipt_number ?? null },
+        });
+      } catch { /* noop */ }
       return {
         status: "error",
         message: `Chasis # ${chasisNorm} is already registered in another sale (${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}${firstRow.receipt_number ? ` — ${firstRow.receipt_number}` : ""}). Each bike chasis can only be sold once.`,
@@ -738,6 +791,58 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const discount = parsed.data.discountAmount || 0;
   const total = Math.max(0, unitPrice * qty - discount);
 
+  const paymentsRawAll = parsed.data.paymentsJson ?? [];
+  const payments = paymentsRawAll.filter(p => Number(p.amount) > 0);
+  const totalPaidSubmitted = payments.reduce((t, p) => t + (Number(p.amount) || 0), 0);
+  dbg("C", "payment validation computed (pre-insert)", { paymentsRawLen: paymentsRawAll.length, paymentsPositiveLen: payments.length, totalPaidSubmitted, saleTotal: total });
+  if (payments.length === 0 || totalPaidSubmitted <= 0) {
+    try {
+      await writeActivity({
+        actorUserId: actor.userId,
+        actorRole: actor.profile.role,
+        action: "sale_requested",
+        summary: `Sale submission blocked (no payment): ${actor.profile.full_name ?? actor.userId} attempted to submit sale for ${vErr || !variant ? "Unknown bike" : ""} chasis ${String(parsed.data.chasisNumber ?? "").trim().toUpperCase()} but recorded PKR 0 paid of PKR ${total.toLocaleString("en-PK")}.`,
+        targetTable: "sales",
+        targetId: null,
+        metadata: { outcome: "blocked", reason: "no_payment", chasis_number: String(parsed.data.chasisNumber ?? "").trim().toUpperCase(), customer_id: customerId, motorcycle_variant_id: parsed.data.motorcycleVariantId, total, totalPaidSubmitted, paymentsRawLen: paymentsRawAll.length },
+      });
+    } catch { /* noop */ }
+    return {
+      status: "error",
+      message: "At least one payment is required before submitting a sale for approval.",
+      errors: {
+        paymentsJson: [
+          "You have not recorded any payment amount yet.",
+          "Sale cannot be submitted for approval unless at least one payment is recorded.",
+          "Fill in the Amount (PKR) for at least one payment split above.",
+        ],
+      },
+    };
+  }
+  if (totalPaidSubmitted < Number(total ?? 0)) {
+    try {
+      await writeActivity({
+        actorUserId: actor.userId,
+        actorRole: actor.profile.role,
+        action: "sale_requested",
+        summary: `Sale submission blocked (underpaid): ${actor.profile.full_name ?? actor.userId} attempted to submit sale chasis ${String(parsed.data.chasisNumber ?? "").trim().toUpperCase()} but paid PKR ${totalPaidSubmitted.toLocaleString("en-PK")} of PKR ${(Number(total) || 0).toLocaleString("en-PK")}.`,
+        targetTable: "sales",
+        targetId: null,
+        metadata: { outcome: "blocked", reason: "underpaid", chasis_number: String(parsed.data.chasisNumber ?? "").trim().toUpperCase(), customer_id: customerId, motorcycle_variant_id: parsed.data.motorcycleVariantId, total, totalPaidSubmitted, paymentsCount: payments.length },
+      });
+    } catch { /* noop */ }
+    return {
+      status: "error",
+      message: `Total paid (PKR ${totalPaidSubmitted.toLocaleString("en-PK")}) is less than sale total (PKR ${(Number(total) || 0).toLocaleString("en-PK")}).`,
+      errors: {
+        paymentsJson: [
+          `Total paid PKR ${totalPaidSubmitted.toLocaleString("en-PK")} does not cover the sale total of PKR ${(Number(total) || 0).toLocaleString("en-PK")}.`,
+          "Sales cannot be approved until the full balance is paid. Add more payment splits to cover the balance.",
+        ],
+      },
+    };
+  }
+
   // 3. Generate SALE reference number: OWM-SALE-YYMMDDHHMMSSmmmRRR (all digits after prefix, ≥6 required)
   function generateSaleRef(): string {
     const now = new Date();
@@ -753,6 +858,7 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     motorcycle?: { name?: string; brand?: { name?: string } | null } | null;
   };
   const v = variant as unknown as VariantWithJoins;
+  dbg("A", "before sales.insert", { receiptNumber, customerId, total, unitPrice, qty, discount, chasisNumber: String(parsed.data.chasisNumber ?? "").trim().toUpperCase() });
   const { data: insertedSale, error } = await sb.from("sales").insert({
     receipt_number: receiptNumber,
     customer_id: customerId,
@@ -775,37 +881,11 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   if (error) return databaseAction("initiateSale", error);
   const saleId = insertedSale?.id;
   if (!saleId) return { status: "error", message: "Sale creation failed (no id returned)." };
+  dbg("A", "after sales.insert", { saleId, receiptNumber });
 
-  // 4. Record any positive payment splits in the same submit (no extra clicks needed). Require AT LEAST ONE positive payment (zero payments means nothing paid — reject immediately per user rule: sale should never go through till amount paid).
-  const paymentsRawAll = parsed.data.paymentsJson ?? [];
-  const payments = paymentsRawAll.filter(p => Number(p.amount) > 0);
-  const totalPaidSubmitted = payments.reduce((t, p) => t + (Number(p.amount) || 0), 0);
-  if (payments.length === 0 || totalPaidSubmitted <= 0) {
-    return {
-      status: "error",
-      message: "At least one payment is required before submitting a sale for approval.",
-      errors: {
-        paymentsJson: [
-          "You have not recorded any payment amount yet.",
-          "Sale cannot be submitted for approval unless at least one payment is recorded.",
-          "Fill in the Amount (PKR) for at least one payment split above.",
-        ],
-      },
-    };
-  }
-  if (totalPaidSubmitted < Number(total ?? 0)) {
-    return {
-      status: "error",
-      message: `Total paid (PKR ${totalPaidSubmitted.toLocaleString("en-PK")}) is less than sale total (PKR ${(Number(total) || 0).toLocaleString("en-PK")}).`,
-      errors: {
-        paymentsJson: [
-          `Total paid PKR ${totalPaidSubmitted.toLocaleString("en-PK")} does not cover the sale total of PKR ${(Number(total) || 0).toLocaleString("en-PK")}.`,
-          "Sales cannot be approved until the full balance is paid. Add more payment splits to cover the balance.",
-        ],
-      },
-    };
-  }
+  dbg("C", "payment validation already passed (post-insert)", { saleId, total, totalPaidSubmitted, paymentsCount: payments.length });
   let recordedPayments = 0;
+  let paymentInsertFailed = false;
   const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
   function serverTxnRef(): string {
     const now = new Date();
@@ -843,17 +923,38 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
         recorded_by: actor.userId,
       })).error;
       if (!insErr) recordedPayments += 1;
+      if (insErr) paymentInsertFailed = true;
     }
   }
 
+  if (paymentInsertFailed || recordedPayments !== payments.length) {
+    try {
+      await sb.from("sale_payments").delete().eq("sale_id", saleId);
+      await sb.from("sales").delete().eq("id", saleId);
+    } catch { /* noop */ }
+    try {
+      await writeActivity({
+        actorUserId: actor.userId,
+        actorRole: actor.profile.role,
+        action: "sale_requested",
+        summary: `Sale submission failed while recording payment splits. Sale ${receiptNumber} rolled back. Recorded ${recordedPayments}/${payments.length} payments.`,
+        targetTable: "sales",
+        targetId: saleId,
+        metadata: { outcome: "failed", reason: "payment_insert_failed", receipt_number: receiptNumber, saleId, recordedPayments, expectedPayments: payments.length, total, totalPaidSubmitted },
+      });
+    } catch { /* noop */ }
+    return { status: "error", message: "Sale could not be submitted because payment recording failed. Please try again." };
+  }
+
+  dbg("D", "before writeActivity sale_submitted", { saleId, receiptNumber, recordedPayments, totalPaidSubmitted, total });
   await writeActivity({
     actorUserId: actor.userId,
     actorRole: actor.profile.role,
-    action: "sale_submitted",
+    action: "sale_requested",
     summary: `Manager ${actor.profile.full_name ?? actor.userId} SUBMITTED new sale ${receiptNumber} for approval. Bike: ${v.motorcycle?.brand?.name ?? variant.brand_name_snapshot ?? "Unknown"} ${v.motorcycle?.name ?? variant.motorcycle_name_snapshot ?? "Unknown"} ${variant.cc ?? ""}cc chasis ${parsed.data.chasisNumber} for customer ${customerId}. Total: PKR ${total.toLocaleString("en-PK")}. ${recordedPayments} payment split(s) attached — PKR ${totalPaidSubmitted.toLocaleString("en-PK")}.`,
     targetTable: "sales",
     targetId: saleId,
-    metadata: { sale: { receipt_number: receiptNumber, chasis_number: parsed.data.chasisNumber, motorcycle_variant_id: parsed.data.motorcycleVariantId, customer_id: customerId }, total, totalPaid: totalPaidSubmitted, paymentsCount: recordedPayments, payments },
+    metadata: { outcome: "submitted", sale: { receipt_number: receiptNumber, chasis_number: parsed.data.chasisNumber, motorcycle_variant_id: parsed.data.motorcycleVariantId, customer_id: customerId }, total, totalPaid: totalPaidSubmitted, paymentsCount: recordedPayments, payments },
   });
 
   revalidateERP();
