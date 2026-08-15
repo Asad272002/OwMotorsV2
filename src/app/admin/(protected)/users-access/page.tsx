@@ -1,9 +1,10 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
 import { UserPlus, Users, Eye, EyeOff, KeyRound } from "lucide-react";
 import { AdminEmptyState, AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { listStaffProfiles } from "@/lib/erp/queries";
+import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { createStaffUser, revokeStaffAccess, updateStaffUser } from "@/app/admin/erp-actions";
 
 export const metadata = { title: "Users & Access" };
@@ -16,6 +17,11 @@ const roleLabels: Record<string, { label: string; tone: string }> = {
 };
 
 export default async function UsersAccessPage() {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["admin", "developer"].includes(actor.profile.role) || !actor.profile.is_active) {
+    redirect("/admin");
+  }
+
   const staff = await listStaffProfiles();
   return (
     <div className="space-y-8">

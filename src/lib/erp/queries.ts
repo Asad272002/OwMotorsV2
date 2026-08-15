@@ -3,6 +3,7 @@ import { cache } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSubmissionSupabaseClient } from "@/lib/supabase/submission-client";
+import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import type { Database } from "@/lib/supabase/database.types";
 import type {
   StaffProfile, Part, StockMovementWithDetails,
@@ -27,6 +28,11 @@ function privileged(): PrivClient {
 // ==============================================
 
 export async function listStaffProfiles(): Promise<readonly StaffProfile[]> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["admin", "developer"].includes(actor.profile.role) || !actor.profile.is_active) {
+    return [];
+  }
+
   const sb = privileged();
   if (!sb) return [];
   const { data } = await sb
@@ -346,17 +352,175 @@ export async function getReceipt(id: string): Promise<ReceiptPrintPayload | null
 // ACTIVITY LOGS (Admin+ view)
 // ==============================================
 
-export const listActivityLogs = cache(async (limit = 200): Promise<readonly (ActivityLog & { actor_profile?: { id: string; full_name: string; email: string | null; role: string } | null })[]> => {
+export type ActivityActor = Readonly<{ id: string; full_name: string; role: string }>;
+
+export type ActivityTargetContext = Readonly<{
+  title: string;
+  subtitle: string;
+  reason?: string | null;
+  amount?: number | null;
+}>;
+
+export type ActivityLogWithContext = ActivityLog & {
+  actor_profile?: ActivityActor | null;
+  resolved_actor?: ActivityActor | null;
+  target_context?: ActivityTargetContext | null;
+};
+
+type ActivityLogRow = ActivityLog & {
+  actor_role_snapshot?: string | null;
+  actor_profile?: ActivityActor | null;
+};
+
+type SaleLogTarget = {
+  id: string;
+  receipt_number: string;
+  brand_name_snapshot: string | null;
+  motorcycle_name_snapshot: string | null;
+  cc_snapshot: number | null;
+  color_name_snapshot: string | null;
+  chasis_number: string | null;
+  total_amount: number | null;
+  requested_by: string | null;
+  approved_by: string | null;
+  rejected_by: string | null;
+  rejection_reason: string | null;
+  customer?: { full_name?: string | null; cnic?: string | null } | null;
+};
+
+type ReceiptLogTarget = {
+  id: string;
+  receipt_number: string;
+  sale_id: string | null;
+  generated_by: string | null;
+  sale?: SaleLogTarget | null;
+};
+
+function saleLabel(sale: SaleLogTarget | null | undefined): ActivityTargetContext | null {
+  if (!sale) return null;
+  const bike = [sale.brand_name_snapshot, sale.motorcycle_name_snapshot, sale.cc_snapshot ? `${sale.cc_snapshot}cc` : null]
+    .filter(Boolean)
+    .join(" ");
+  const pieces = [
+    bike,
+    sale.color_name_snapshot ? `Color: ${sale.color_name_snapshot}` : null,
+    sale.chasis_number ? `Chasis: ${sale.chasis_number}` : null,
+    sale.customer?.full_name ? `Customer: ${sale.customer.full_name}` : null,
+  ].filter(Boolean);
+  return {
+    title: sale.receipt_number,
+    subtitle: pieces.join(" | "),
+    reason: sale.rejection_reason,
+    amount: sale.total_amount,
+  };
+}
+
+function receiptLabel(receipt: ReceiptLogTarget | null | undefined): ActivityTargetContext | null {
+  if (!receipt) return null;
+  const sale = saleLabel(receipt.sale);
+  return {
+    title: `${receipt.receipt_number}${receipt.sale?.receipt_number ? ` for ${receipt.sale.receipt_number}` : ""}`,
+    subtitle: sale?.subtitle ?? "Receipt record",
+    amount: sale?.amount ?? null,
+  };
+}
+
+export const listActivityLogs = cache(async (limit = 200): Promise<readonly ActivityLogWithContext[]> => {
   const supabase = await createServerSupabaseClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("activity_logs")
     .select(`
       *,
-      actor_profile:profiles(id, full_name, email, role)
+      actor_profile:profiles(id, full_name, role)
     `)
     .order("created_at", { ascending: false })
     .limit(limit);
-  return (data as unknown as (ActivityLog & { actor_profile?: { id: string; full_name: string; email: string | null; role: string } | null })[]) ?? [];
+  if (error) {
+    console.error("[OW Motors activity logs query failed]", { code: error.code, message: error.message });
+    return [];
+  }
+  const logs = ((data as unknown as ActivityLogRow[]) ?? []);
+  const saleIds = logs
+    .filter((log) => log.target_table === "sales" && log.target_id)
+    .map((log) => log.target_id)
+    .filter((id): id is string => typeof id === "string");
+  const receiptIds = logs
+    .filter((log) => log.target_table === "receipts" && log.target_id)
+    .map((log) => log.target_id)
+    .filter((id): id is string => typeof id === "string");
+
+  const [salesResult, receiptsResult] = await Promise.all([
+    saleIds.length
+      ? supabase
+          .from("sales")
+          .select(`
+            id, receipt_number, brand_name_snapshot, motorcycle_name_snapshot, cc_snapshot,
+            color_name_snapshot, chasis_number, total_amount, requested_by, approved_by,
+            rejected_by, rejection_reason,
+            customer:customers(full_name, cnic)
+          `)
+          .in("id", saleIds)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
+    receiptIds.length
+      ? supabase
+          .from("receipts")
+          .select(`
+            id, receipt_number, sale_id, generated_by,
+            sale:sales(
+              id, receipt_number, brand_name_snapshot, motorcycle_name_snapshot, cc_snapshot,
+              color_name_snapshot, chasis_number, total_amount, requested_by, approved_by,
+              rejected_by, rejection_reason,
+              customer:customers(full_name, cnic)
+            )
+          `)
+          .in("id", receiptIds)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
+  ]);
+
+  if (salesResult.error) console.error("[OW Motors activity sale targets query failed]", { code: salesResult.error.code, message: salesResult.error.message });
+  if (receiptsResult.error) console.error("[OW Motors activity receipt targets query failed]", { code: receiptsResult.error.code, message: receiptsResult.error.message });
+
+  const sales = new Map((salesResult.data as unknown as SaleLogTarget[]).map((sale) => [sale.id, sale]));
+  const receipts = new Map((receiptsResult.data as unknown as ReceiptLogTarget[]).map((receipt) => [receipt.id, receipt]));
+  const receiptsBySale = new Map<string, ReceiptLogTarget>();
+  for (const receipt of receipts.values()) {
+    if (receipt.sale_id) receiptsBySale.set(receipt.sale_id, receipt);
+  }
+
+  const profileIds = new Set<string>();
+  for (const log of logs) {
+    if (log.actor_id) profileIds.add(log.actor_id);
+    const sale = log.target_table === "sales" && log.target_id ? sales.get(log.target_id) : null;
+    const receipt = log.target_table === "receipts" && log.target_id ? receipts.get(log.target_id) : null;
+    for (const id of [sale?.requested_by, sale?.approved_by, sale?.rejected_by, receipt?.generated_by]) {
+      if (id) profileIds.add(id);
+    }
+  }
+
+  const profilesResult = profileIds.size
+    ? await supabase.from("profiles").select("id, full_name, role").in("id", Array.from(profileIds))
+    : { data: [] as unknown[], error: null };
+  if (profilesResult.error) console.error("[OW Motors activity profile lookup failed]", { code: profilesResult.error.code, message: profilesResult.error.message });
+  const profiles = new Map((profilesResult.data as unknown as ActivityActor[]).map((profile) => [profile.id, profile]));
+
+  return logs.map((log) => {
+    const sale = log.target_table === "sales" && log.target_id ? sales.get(log.target_id) : null;
+    const receipt = log.target_table === "receipts" && log.target_id ? receipts.get(log.target_id) : null;
+    const receiptForSale = sale?.id ? receiptsBySale.get(sale.id) : null;
+    const actorId =
+      log.actor_id ??
+      (log.action === "sale_requested" ? sale?.requested_by : null) ??
+      (log.action === "sale_approved" ? sale?.approved_by : null) ??
+      (log.action === "sale_rejected" ? sale?.rejected_by : null) ??
+      (log.action === "receipt_generated" ? receipt?.generated_by : null) ??
+      (log.action === "sale_completed" ? receiptForSale?.generated_by ?? sale?.approved_by : null);
+
+    return {
+      ...log,
+      resolved_actor: actorId ? profiles.get(actorId) ?? null : log.actor_profile ?? null,
+      target_context: log.target_table === "receipts" ? receiptLabel(receipt) : saleLabel(sale),
+    };
+  });
 });
 
 // ==============================================

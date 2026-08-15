@@ -15,7 +15,6 @@ import {
 import { getSupabaseConfig } from "@/lib/supabase/config";
 import type { PaymentMethod, SaleStatus, StockApprovalStatus } from "@/lib/erp/types";
 import type { Database, StockStatus } from "@/lib/supabase/database.types";
-type ActivityRowInsert = Database["public"]["Tables"]["activity_logs"]["Insert"];
 
 // All activity action values ever produced by code. If the postgres enum
 // `ActivityAction` does not yet contain a value, we ALTER TYPE to add it
@@ -68,8 +67,10 @@ async function ensureActivityActionsEnum(sb: SupabaseClient<Database>): Promise<
 // because it required a "summary" column (not nullable) and some action values
 // weren't in the enum — that's exactly why activity logs showed 0 entries.
 type PostgrestErrorLike = { message: string; details: string; code?: string };
+type ActivityRowInsert = Record<string, unknown>;
 
-async function writeActivity(params: {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function writeActivityLegacy(params: {
   actorUserId: string;
   actorRole: string;
   action: string;
@@ -98,7 +99,8 @@ async function writeActivity(params: {
       metadata: (params.metadata ?? null) as never,
       created_at: now,
     };
-    const firstTry = await sb.from("activity_logs").insert(row);
+    type LegacyInsert = { insert: (r: Record<string, unknown>) => Promise<{ error: PostgrestErrorLike | null }> };
+    const firstTry = await (sb.from("activity_logs") as unknown as LegacyInsert).insert(row);
     if (!firstTry.error) return;
 
     console.warn("activity_logs primary insert fell back (text cast mode):", firstTry.error?.message, firstTry.error?.details);
@@ -120,6 +122,46 @@ async function writeActivity(params: {
     type AnyInsert = { insert: (r: Record<string, unknown>) => { error: PostgrestErrorLike | null } };
     const fallbackInsert = await (sb.from("activity_logs") as unknown as AnyInsert).insert(fallback);
     if (fallbackInsert.error) console.warn("[CRITICAL] activity_logs fallback insert failed:", fallbackInsert.error.message, fallbackInsert.error.details, JSON.stringify(fallback));
+  } catch (e) {
+    console.warn("activity_logs catch-all:", e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function writeActivity(params: {
+  actorUserId: string;
+  actorRole: string;
+  action: string;
+  summary: string;
+  targetTable?: string | null;
+  targetId?: string | null;
+  metadata?: unknown;
+}): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    const sb = serviceRoleClient();
+    await ensureActivityActionsEnum(sb);
+    const safeActorId = String(params.actorUserId ?? "").trim() || "00000000-0000-0000-0000-000000000000";
+    const safeRole = String(params.actorRole ?? "").trim() || "unknown";
+    const safeAction = String(params.action || "unknown");
+    const safeSummary = String(params.summary ?? "-") || "-";
+    const baseMetadata = params.metadata && typeof params.metadata === "object" && !Array.isArray(params.metadata)
+      ? params.metadata as Record<string, unknown>
+      : { value: params.metadata ?? null };
+
+    const row: Record<string, unknown> = {
+      id: (typeof crypto !== "undefined" && "randomUUID" in (crypto ?? {}) ? crypto.randomUUID() : undefined),
+      action: safeAction,
+      actor_id: safeActorId,
+      actor_role_snapshot: safeRole,
+      target_table: params.targetTable ?? null,
+      target_id: params.targetId ?? null,
+      metadata: { ...baseMetadata, summary: safeSummary },
+      created_at: now,
+    };
+
+    type AnyInsert = { insert: (r: Record<string, unknown>) => Promise<{ error: PostgrestErrorLike | null }> };
+    const result = await (sb.from("activity_logs") as unknown as AnyInsert).insert(row);
+    if (result.error) console.warn("[CRITICAL] activity_logs insert failed:", result.error.message, result.error.details, JSON.stringify(row));
   } catch (e) {
     console.warn("activity_logs catch-all:", e instanceof Error ? e.message : String(e));
   }
