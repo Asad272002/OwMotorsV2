@@ -657,46 +657,6 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const parsed = saleInitiateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return validationAction(parsed.error);
 
-  const dbgTraceId = (typeof crypto !== "undefined" && "randomUUID" in (crypto ?? {}) ? crypto.randomUUID() : `trace-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-  const dbg = (hypothesisId: string, msg: string, data: Record<string, unknown>) => {
-    // #region debug-point A:initiateSale
-    void (async () => {
-      try {
-        const fs = await import("node:fs");
-        const p = ".dbg/partial-payment-sale.env";
-        let u = "http://127.0.0.1:7777/event";
-        let s = "partial-payment-sale";
-        try {
-          const e = fs.readFileSync(p, "utf8");
-          u = e.match(/DEBUG_SERVER_URL=(.+)/)?.[1]?.trim() || u;
-          s = e.match(/DEBUG_SESSION_ID=(.+)/)?.[1]?.trim() || s;
-        } catch { /* noop */ }
-        await fetch(u, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionId: s,
-            runId: "pre-fix",
-            hypothesisId,
-            traceId: dbgTraceId,
-            location: "erp-actions.ts:initiateSale",
-            msg: `[DEBUG] ${msg}`,
-            data,
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
-      } catch { /* noop */ }
-    })();
-    // #endregion
-  };
-  dbg("A", "entry", {
-    actorRole: actor.profile.role,
-    useExistingCustomer: parsed.data.useExistingCustomer,
-    chasisNumber: String(parsed.data.chasisNumber ?? "").trim().toUpperCase(),
-    paymentsJsonLen: Array.isArray(parsed.data.paymentsJson) ? parsed.data.paymentsJson.length : null,
-    paymentsJsonTotalRaw: Array.isArray(parsed.data.paymentsJson) ? parsed.data.paymentsJson.reduce((t, p) => t + (Number((p as { amount?: unknown }).amount) || 0), 0) : null,
-  });
-
   const sb = serviceRoleClient();
 
   // 1. Determine customer (create new inline if needed)
@@ -752,7 +712,6 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
         rejected: "rejected earlier",
         cancelled: "cancelled",
       };
-      dbg("B", "blocked by chassis-duplicate", { chasisNorm, existingSaleId: firstRow.id, existingSaleStatus: firstRow.sale_status, existingSaleRef: firstRow.receipt_number ?? null });
       try {
         await writeActivity({
           actorUserId: actor.userId,
@@ -794,7 +753,6 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const paymentsRawAll = parsed.data.paymentsJson ?? [];
   const payments = paymentsRawAll.filter(p => Number(p.amount) > 0);
   const totalPaidSubmitted = payments.reduce((t, p) => t + (Number(p.amount) || 0), 0);
-  dbg("C", "payment validation computed (pre-insert)", { paymentsRawLen: paymentsRawAll.length, paymentsPositiveLen: payments.length, totalPaidSubmitted, saleTotal: total });
   if (payments.length === 0 || totalPaidSubmitted <= 0) {
     try {
       await writeActivity({
@@ -858,7 +816,6 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     motorcycle?: { name?: string; brand?: { name?: string } | null } | null;
   };
   const v = variant as unknown as VariantWithJoins;
-  dbg("A", "before sales.insert", { receiptNumber, customerId, total, unitPrice, qty, discount, chasisNumber: String(parsed.data.chasisNumber ?? "").trim().toUpperCase() });
   const { data: insertedSale, error } = await sb.from("sales").insert({
     receipt_number: receiptNumber,
     customer_id: customerId,
@@ -881,11 +838,9 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   if (error) return databaseAction("initiateSale", error);
   const saleId = insertedSale?.id;
   if (!saleId) return { status: "error", message: "Sale creation failed (no id returned)." };
-  dbg("A", "after sales.insert", { saleId, receiptNumber });
-
-  dbg("C", "payment validation already passed (post-insert)", { saleId, total, totalPaidSubmitted, paymentsCount: payments.length });
   let recordedPayments = 0;
   let paymentInsertFailed = false;
+  const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
   const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
   function serverTxnRef(): string {
     const now = new Date();
@@ -946,7 +901,6 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     return { status: "error", message: "Sale could not be submitted because payment recording failed. Please try again." };
   }
 
-  dbg("D", "before writeActivity sale_submitted", { saleId, receiptNumber, recordedPayments, totalPaidSubmitted, total });
   await writeActivity({
     actorUserId: actor.userId,
     actorRole: actor.profile.role,
