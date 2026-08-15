@@ -157,10 +157,27 @@ export const listCustomers = cache(async (): Promise<readonly Customer[]> => {
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase
     .from("customers")
-    .select("*")
+    .select(`
+      *,
+      sales:sales(*, payments:sale_payments(*), requestor:profiles!sales_requested_by_fkey(full_name))
+    `)
     .order("created_at", { ascending: false })
     .limit(500);
-  return (data as Customer[]) ?? [];
+  type Row = Customer & { sales?: unknown[]; purchases?: unknown[] };
+  const rows = (data as Row[]) ?? [];
+  return rows.map((r) => {
+    const purchases = Array.isArray((r as { sales?: unknown[] }).sales)
+      ? (r as { sales: unknown[] }).sales
+      : Array.isArray((r as { purchases?: unknown[] }).purchases)
+        ? (r as { purchases: unknown[] }).purchases
+        : [];
+    const approvedPurchases = (purchases as unknown as { sale_status?: string; chasis_number?: string }[])
+      .filter(p => p.sale_status === "approved" || p.sale_status === "completed");
+    const chasisFromApproved = approvedPurchases.map(p => (p.chasis_number ?? "").toUpperCase()).filter(Boolean);
+    const existingChasis = Array.isArray(r.chasis_numbers) ? r.chasis_numbers.map(x => String(x).toUpperCase()) : [];
+    const mergedChasis = Array.from(new Set<string>([...existingChasis, ...chasisFromApproved]));
+    return { ...r, chasis_numbers: mergedChasis, sales: purchases as Customer["sales"], purchases: purchases as Customer["purchases"] } as Customer;
+  });
 });
 
 export async function getCustomer(id: string): Promise<CustomerPurchaseHistory | null> {

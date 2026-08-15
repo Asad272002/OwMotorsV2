@@ -721,7 +721,8 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     .maybeSingle();
   if (vErr || !variant) return { status: "error", message: "Variant not found.", errors: { motorcycleVariantId: ["Pick a valid bike from the grid above."] } };
 
-  const unitPrice = parsed.data.unitPrice || 0;
+  const variantPrice = Number((variant as unknown as { price?: unknown }).price ?? 0) || 0;
+  const unitPrice = variantPrice > 0 ? variantPrice : (parsed.data.unitPrice || 0);
   const qty = parsed.data.quantitySold || 1;
   const discount = parsed.data.discountAmount || 0;
   const total = Math.max(0, unitPrice * qty - discount);
@@ -943,6 +944,20 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
       notes: null,
     }).select("id").maybeSingle();
     if (rec.error) console.warn("receipt auto insert after sale approve failed:", rec.error);
+
+    if (sale.customer?.id && sale.chasis_number) {
+      const custRow = await sb.from("customers").select("chasis_numbers").eq("id", sale.customer.id).maybeSingle();
+      if (!custRow.error && custRow.data) {
+        const existing: string[] = Array.isArray((custRow.data as { chasis_numbers?: unknown[] | null }).chasis_numbers)
+          ? (custRow.data as { chasis_numbers: string[] }).chasis_numbers.map(x => String(x ?? ""))
+          : [];
+        const normalizedChasis = String(sale.chasis_number).trim().toUpperCase();
+        if (normalizedChasis && !existing.some(x => x.toUpperCase() === normalizedChasis)) {
+          const next = [...existing, normalizedChasis];
+          await sb.from("customers").update({ chasis_numbers: next }).eq("id", sale.customer.id);
+        }
+      }
+    }
   }
 
   const update = (parsed.data.decision === "approved"
