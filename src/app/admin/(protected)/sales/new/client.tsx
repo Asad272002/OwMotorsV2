@@ -150,6 +150,7 @@ export default function NewSalePageClient(props: {
   const totalAmount = (chosen?.price ?? 0) * quantity;
   const paidAmount = payments.reduce((t, p) => t + (Number(p.amount.replace(/[^0-9]/g, "")) || 0), 0);
   const dueAmount = totalAmount - paidAmount;
+  const paymentMismatch = totalAmount > 0 && paidAmount > 0 && dueAmount !== 0;
   const paymentState =
     totalAmount <= 0
       ? "Pick a bike"
@@ -168,7 +169,7 @@ export default function NewSalePageClient(props: {
   const selectedCustomer = useMemo(() => customers.find(c => c.id === existingCustomerId) ?? null, [existingCustomerId, customers]);
   const hasBuyer = Boolean(selectedCustomer || createNewCustomer);
   const bikeStepComplete = Boolean(chosen && chasisNumber.trim() && hasBuyer);
-  const paymentStepComplete = totalAmount > 0 && paidAmount >= totalAmount && payments.some(p => (Number(p.amount.replace(/[^0-9]/g, "")) || 0) > 0);
+  const paymentStepComplete = totalAmount > 0 && paidAmount === totalAmount && payments.some(p => (Number(p.amount.replace(/[^0-9]/g, "")) || 0) > 0);
   const stepStates: [StepStatus, StepStatus, StepStatus] = [
     bikeStepComplete ? "complete" : "active",
     !bikeStepComplete ? "pending" : paymentStepComplete ? "complete" : "active",
@@ -198,6 +199,17 @@ export default function NewSalePageClient(props: {
       return next;
     }));
   }
+  function chooseVariant(nextVariantId: string) {
+    if (nextVariantId === variantId) return;
+    setVariantId(nextVariantId);
+    setQuantity(1);
+    setChasisNumber("");
+    setFormErrors((prev) => ({
+      ...prev,
+      chasisNumber: ["Enter the chasis number for the newly selected bike."],
+      paymentsJson: paidAmount > 0 ? ["Review payment amount against the new bike total."] : [],
+    }));
+  }
 
   const [formErrors, setFormErrors] = useState<Record<string, readonly (string | null)[]>>({});
   useEffect(() => {
@@ -209,11 +221,12 @@ export default function NewSalePageClient(props: {
     return () => { window.removeEventListener("admin-form:errors", onErrors as EventListener); };
   }, []);
 
-  const canSubmit = !!chosen && !!chasisNumber && hasBuyer && payments.every(p => {
+  const paymentsValid = payments.every(p => {
     const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
     const amt = Number(p.amount.replace(/[^0-9]/g, "")) || 0;
     return amt > 0 && (!needBank || !!p.bank_id);
-  }) && paidAmount >= totalAmount && totalAmount > 0;
+  });
+  const canSubmit = !!chosen && !!chasisNumber && hasBuyer && paymentsValid && paidAmount === totalAmount && totalAmount > 0;
   function errText(...paths: string[]): string {
     for (const p of paths) {
       const arr = formErrors[p];
@@ -279,27 +292,49 @@ export default function NewSalePageClient(props: {
 
       <StepPanel step={1} title="Bike & Customer" description="Choose the exact variant and buyer for this sale." status={stepStates[0]} delay={80} actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
         <div className="space-y-6">
-          <div>
-            <label className={adminLabelClass}>Search bike</label>
-            <div className="relative mt-2">
-              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
-              <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} pl-10`} placeholder="Search by brand, model, color, or CC..." />
+          <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+            <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+              <div className="flex-1">
+                <label className={adminLabelClass}>Search bike</label>
+                <div className="relative mt-2">
+                  <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+                  <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} bg-white pl-10`} placeholder="Search by brand, model, color, or CC..." />
+                </div>
+              </div>
+              <div className="rounded-md border border-[#E5E7EB] bg-white px-4 py-3 lg:min-w-[320px]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B7280]">Selected bike</p>
+                {chosen ? (
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-[#111111]">{chosen.motorcycle?.brand?.name} {chosen.motorcycle?.name}</p>
+                      <p className="text-xs text-[#6B7280]">{chosen.cc}cc | {chosen.color_name ?? "Color not set"} | {chosen.quantity ?? 0} available</p>
+                    </div>
+                    <span className="shrink-0 font-display text-base font-bold text-[#C62828]">{pkr(chosen.price ?? 0)}</span>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-sm text-[#6B7280]">No bike selected yet.</p>
+                )}
+              </div>
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-3 flex items-center justify-between text-xs text-[#6B7280]">
+              <span>{filteredVariants.length} matching variant(s)</span>
+              <span>Scroll inside this list when inventory grows</span>
+            </div>
+            <div className="mt-2 grid max-h-[340px] grid-cols-1 gap-2 overflow-y-auto rounded-md border border-[#E5E7EB] bg-white p-2 md:grid-cols-2 xl:grid-cols-3">
               {filteredVariants.length === 0 ? (
                 <p className="col-span-full rounded-md border border-dashed border-[#D1D5DB] p-4 text-center text-sm text-[#6B7280]">No variants match. Add variants to motorcycle inventory first.</p>
               ) : filteredVariants.map(v => {
                 const selected = v.id === variantId;
                 const available = (v.quantity ?? 0) > 0;
                 return (
-                  <button key={v.id} type="button" onClick={() => { setVariantId(v.id); setQuantity(1); }} className={`flex min-h-[92px] items-start gap-3 rounded-md border p-3 text-left shadow-sm transition-colors ${selected ? "border-[#C62828] bg-[#FEF2F2] ring-2 ring-[#C62828]/15" : "border-[#E5E7EB] bg-white hover:border-[#C62828]/50 hover:bg-[#FFF7F7]"} ${!available ? "opacity-60" : ""}`}>
-                    <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${selected ? "bg-white text-[#C62828]" : "bg-[#F7F7F8] text-[#374151]"}`}>
+                  <button key={v.id} type="button" onClick={() => chooseVariant(v.id)} className={`flex min-h-[76px] items-start gap-3 rounded-md border p-3 text-left transition-colors ${selected ? "border-[#C62828] bg-[#FEF2F2] ring-2 ring-[#C62828]/15" : "border-[#E5E7EB] bg-white hover:border-[#C62828]/50 hover:bg-[#FFF7F7]"} ${!available ? "opacity-60" : ""}`}>
+                    <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${selected ? "bg-white text-[#C62828]" : "bg-[#F7F7F8] text-[#374151]"}`}>
                       <Bike aria-hidden="true" className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-[#111111]">{v.motorcycle?.brand?.name} {v.motorcycle?.name}</p>
                       <p className="mt-0.5 text-xs text-[#6B7280]">{v.cc}cc | {v.color_name ?? "Color not set"}</p>
-                      <div className="mt-1 flex items-center gap-2">
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
                         <span className="font-display text-sm font-bold text-[#C62828]">{pkr(v.price ?? 0)}</span>
                         {available ? <span className="text-[10px] font-bold uppercase tracking-wider text-[#15803D]">{v.quantity} available</span> : <span className="text-[10px] font-bold uppercase tracking-wider text-[#C62828]">Sold out</span>}
                       </div>
@@ -424,7 +459,7 @@ export default function NewSalePageClient(props: {
         actions={
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span className={`rounded-md px-3 py-1.5 ${paidAmount > 0 ? "border border-green-200 bg-green-50 text-[#15803D]" : "border border-[#E5E7EB] bg-white text-[#6B7280]"}`}>Paid: {pkr(paidAmount)}</span>
-            <span className={`rounded-md px-3 py-1.5 ${dueAmount > 0 ? "border border-amber-200 bg-amber-50 text-[#B45309]" : "border border-green-200 bg-green-50 text-[#15803D]"}`}>Due: {pkr(Math.max(0, dueAmount))}</span>
+            <span className={`rounded-md px-3 py-1.5 ${dueAmount !== 0 && totalAmount > 0 ? "border border-amber-200 bg-amber-50 text-[#B45309]" : "border border-green-200 bg-green-50 text-[#15803D]"}`}>{dueAmount < 0 ? "Extra" : "Due"}: {pkr(Math.abs(dueAmount))}</span>
             <span className="rounded-md border border-[#C62828] bg-[#FEF2F2] px-3 py-1.5 text-[#C62828]">Total: {pkr(totalAmount)}</span>
           </div>
         }
@@ -475,6 +510,13 @@ export default function NewSalePageClient(props: {
             );
           })}
           {hasErr("payments", "paymentsJson") ? <div data-error-path="paymentsJson" className="rounded-md border border-[#FECACA] bg-[#FEF2F2] p-3 text-xs font-semibold text-[#C62828]">{errText("payments", "paymentsJson")}</div> : null}
+          {paymentMismatch ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-[#B45309]">
+              {dueAmount > 0
+                ? `Payment is short by ${pkr(dueAmount)} for the selected bike.`
+                : `Payment is over by ${pkr(Math.abs(dueAmount))} for the selected bike.`}
+            </div>
+          ) : null}
           <button type="button" onClick={addPayment} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-dashed border-[#C62828]/50 px-4 text-sm font-semibold text-[#C62828] hover:bg-[#FEF2F2]">
             <Plus aria-hidden="true" className="h-4 w-4" />Add another payment split (e.g. second bank, partial cash)
           </button>
