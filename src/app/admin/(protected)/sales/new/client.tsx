@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Bike, Building2, CreditCard, FileText, Landmark, PencilLine, Plus, Trash2, Wallet, ChevronDown, ChevronUp, Search
+  Bike, Building2, CreditCard, FileText, Landmark, PencilLine, Plus, Trash2, Wallet, Search
 } from "lucide-react";
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
-import { initiateSale, recordSalePayment } from "@/app/admin/erp-actions";
-import { useActionState, useEffect } from "react";
-import { INITIAL_ADMIN_ACTION_STATE, type AdminActionState } from "@/lib/admin/action-state";
+import { initiateSale } from "@/app/admin/erp-actions";
 
 const ERROR_INPUT_RING = "ring-2 ring-[#C62828]/70 border-[#C62828] focus:ring-[#C62828]";
 function joinMessages(msgs: readonly (string | null | undefined)[] | null | undefined): string {
@@ -107,6 +105,14 @@ export default function NewSalePageClient(props: {
   const totalAmount = (chosen?.price ?? 0) * quantity;
   const paidAmount = payments.reduce((t, p) => t + (Number(p.amount.replace(/[^0-9]/g, "")) || 0), 0);
   const dueAmount = totalAmount - paidAmount;
+  const paymentState =
+    totalAmount <= 0
+      ? "Pick a bike"
+      : dueAmount > 0
+        ? `${pkr(dueAmount)} short`
+        : dueAmount < 0
+          ? `${pkr(Math.abs(dueAmount))} extra`
+          : "Fully paid";
 
   const matchedCustomers = useMemo(() => {
     const q = customerSearch.trim().toLowerCase();
@@ -174,17 +180,35 @@ export default function NewSalePageClient(props: {
       <AdminPageHeader
         eyebrow="Sales Workflow"
         title="Record New Bike Sale"
-        description="Step 1: Pick the bike + customer + chasis. Step 2: Add all payments (cash, banks, multiple splits allowed). Step 3: Submit for Admin approval. Stock is NOT deducted and receipt is NOT generated until Admin approves."
+        description="Select the bike, confirm the buyer, record payment, then send the sale for approval. Stock and receipt generation happen only after approval."
         actions={<Link href="/admin/sales/list" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">View all sales</Link>}
       />
 
-      <AdminPanel title="Step 1 — Bike & Customer" description="Choose the variant being sold. If colors or variants are missing, they need to be added first by a Developer under Inventory & SEO." actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="rounded-md border border-[#E5E7EB] bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Bike</p>
+          <p className="mt-2 truncate text-sm font-semibold text-[#111111]">{chosen ? `${chosen.motorcycle?.brand?.name ?? ""} ${chosen.motorcycle?.name ?? ""}`.trim() : "Not selected"}</p>
+          <p className="mt-1 text-xs text-[#6B7280]">{chosen ? `${chosen.cc}cc | ${chosen.color_name ?? "Color not set"}` : "Choose a stock item below"}</p>
+        </div>
+        <div className="rounded-md border border-[#E5E7EB] bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Stock</p>
+          <p className={`mt-2 text-sm font-semibold ${(chosen?.quantity ?? 0) > 0 ? "text-[#15803D]" : "text-[#C62828]"}`}>{chosen ? `${chosen.quantity ?? 0} available` : "Waiting"}</p>
+          <p className="mt-1 text-xs text-[#6B7280]">Deducts after approval</p>
+        </div>
+        <div className="rounded-md border border-[#E5E7EB] bg-white p-4">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Payment</p>
+          <p className={`mt-2 text-sm font-semibold ${dueAmount === 0 && totalAmount > 0 ? "text-[#15803D]" : dueAmount > 0 ? "text-[#C62828]" : "text-[#111111]"}`}>{paymentState}</p>
+          <p className="mt-1 text-xs text-[#6B7280]">{paidAmount > 0 ? `${pkr(paidAmount)} recorded` : "No payment yet"}</p>
+        </div>
+      </div>
+
+      <AdminPanel title="Step 1 - Bike & Customer" description="Choose the exact variant and buyer for this sale." actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
         <div className="space-y-6">
           <div>
             <label className={adminLabelClass}>Search bike</label>
             <div className="relative mt-2">
               <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
-              <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} pl-10`} placeholder="Search by brand, model, color, or CC…" />
+              <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} pl-10`} placeholder="Search by brand, model, color, or CC..." />
             </div>
             <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
               {filteredVariants.length === 0 ? (
@@ -193,16 +217,16 @@ export default function NewSalePageClient(props: {
                 const selected = v.id === variantId;
                 const available = (v.quantity ?? 0) > 0;
                 return (
-                  <button key={v.id} type="button" onClick={() => { setVariantId(v.id); setQuantity(1); }} className={`flex items-start gap-3 rounded-md border p-3 text-left transition-colors ${selected ? "border-[#C62828] bg-[#FEF2F2]" : "border-[#E5E7EB] bg-white hover:border-[#C62828]/50"} ${!available ? "opacity-60" : ""}`}>
+                  <button key={v.id} type="button" onClick={() => { setVariantId(v.id); setQuantity(1); }} className={`flex min-h-[92px] items-start gap-3 rounded-md border p-3 text-left shadow-sm transition-colors ${selected ? "border-[#C62828] bg-[#FEF2F2] ring-2 ring-[#C62828]/15" : "border-[#E5E7EB] bg-white hover:border-[#C62828]/50 hover:bg-[#FFF7F7]"} ${!available ? "opacity-60" : ""}`}>
                     <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${selected ? "bg-white text-[#C62828]" : "bg-[#F7F7F8] text-[#374151]"}`}>
                       <Bike aria-hidden="true" className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-[#111111]">{v.motorcycle?.brand?.name} {v.motorcycle?.name}</p>
-                      <p className="mt-0.5 text-xs text-[#6B7280]">{v.cc}cc · {v.color_name ?? "Color not set"}</p>
+                      <p className="mt-0.5 text-xs text-[#6B7280]">{v.cc}cc | {v.color_name ?? "Color not set"}</p>
                       <div className="mt-1 flex items-center gap-2">
                         <span className="font-display text-sm font-bold text-[#C62828]">{pkr(v.price ?? 0)}</span>
-                        {available ? <span className="text-[10px] font-bold uppercase tracking-wider text-[#15803D]">× {v.quantity} available</span> : <span className="text-[10px] font-bold uppercase tracking-wider text-[#C62828]">Sold out</span>}
+                        {available ? <span className="text-[10px] font-bold uppercase tracking-wider text-[#15803D]">{v.quantity} available</span> : <span className="text-[10px] font-bold uppercase tracking-wider text-[#C62828]">Sold out</span>}
                       </div>
                     </div>
                   </button>
@@ -215,7 +239,7 @@ export default function NewSalePageClient(props: {
             <div>
               <label htmlFor="newSale-chasisNumber" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
               <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => { const next = e.target.value.toUpperCase(); setChasisNumber(next); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. MP125GP-2025-894321" />
-              {hasErr("chasisNumber", "chasis_number") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</p> : <p className="mt-1 text-xs text-[#6B7280]">Bike&apos;s official chassis number (printed on frame). Must be unique across all sales — including currently pending approvals.</p>}
+              {hasErr("chasisNumber", "chasis_number") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</div> : <p className="mt-1 text-xs text-[#6B7280]">Must be unique across all sales, including pending approvals.</p>}
             </div>
             <div>
               <label htmlFor="newSale-quantitySold" className={adminLabelClass}>Quantity</label>
@@ -224,7 +248,7 @@ export default function NewSalePageClient(props: {
             </div>
             <div>
               <label className={adminLabelClass}>Sale total (auto)</label>
-              <div className={`${adminInputClass} flex items-center justify-between font-display text-xl font-bold text-[#C62828]`}>{pkr(totalAmount)}<span className="text-xs font-normal text-[#6B7280]">{chosen ? `${chosen.price?.toLocaleString("en-PK")} × ${quantity}` : "Pick a bike"}</span></div>
+              <div className={`${adminInputClass} flex items-center justify-between font-display text-xl font-bold text-[#C62828]`}>{pkr(totalAmount)}<span className="text-xs font-normal text-[#6B7280]">{chosen ? `${chosen.price?.toLocaleString("en-PK")} x ${quantity}` : "Pick a bike"}</span></div>
               {hasErr("motorcycleVariantId") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("motorcycleVariantId")}</p> : null}
             </div>
           </div>
@@ -245,15 +269,15 @@ export default function NewSalePageClient(props: {
               <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
                   <label className={adminLabelClass}>Search existing</label>
-                  <input value={customerSearch ?? ""} onChange={e => setCustomerSearch(e.target.value)} className={adminInputClass} placeholder="By CNIC, phone, or name…" />
+                  <input value={customerSearch ?? ""} onChange={e => setCustomerSearch(e.target.value)} className={adminInputClass} placeholder="By CNIC, phone, or name..." />
                   <div className="mt-2 max-h-60 overflow-auto rounded-md border border-[#E5E7EB]">
                     {matchedCustomers.length === 0 ? (
-                      <p className="p-3 text-xs text-[#6B7280]">No match — switch to New Customer to register them.</p>
+                      <p className="p-3 text-xs text-[#6B7280]">No match. Switch to New customer to register them.</p>
                     ) : matchedCustomers.map(c => (
                       <button key={c.id} type="button" onClick={() => { setExistingCustomerId(c.id); }} className={`flex w-full items-start gap-3 border-b border-[#F3F4F6] px-3 py-2 text-left transition-colors ${existingCustomerId === c.id ? "bg-[#FEF2F2]" : "hover:bg-[#FAFAFA]"}`}>
                         <div>
                           <p className="text-sm font-semibold">{c.full_name}</p>
-                          <p className="text-xs text-[#6B7280]">CNIC: <span className="font-mono">{c.cnic}</span> · {c.phone_primary ?? "No phone"}</p>
+                          <p className="text-xs text-[#6B7280]">CNIC: <span className="font-mono">{c.cnic}</span> | {c.phone_primary ?? "No phone"}</p>
                         </div>
                       </button>
                     ))}
@@ -269,8 +293,9 @@ export default function NewSalePageClient(props: {
                         <p className="mt-0.5 text-[#6B7280]">{selectedCustomer.phone_primary ?? "No phone on file"}</p>
                         <input type="hidden" name="existingCustomerId" form="main-sale-form" value={selectedCustomer.id} />
                       </div>
-                    ) : <p className="pt-2 text-xs text-[#6B7280]">Click a customer from the left, or switch to New Customer.</p>}
+                    ) : <p className="pt-2 text-xs text-[#6B7280]">Click a customer from the left, or switch to New customer.</p>}
                   </div>
+                  {hasErr("customerId") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("customerId")}</div> : null}
                 </div>
               </div>
             ) : (
@@ -316,8 +341,8 @@ export default function NewSalePageClient(props: {
       </AdminPanel>
 
       <AdminPanel
-        title="Step 2 — Payments"
-        description="Record EVERY payment method used. Multiple payments and multiple banks are allowed. The receipt will itemise them exactly as entered."
+        title="Step 2 - Payments"
+        description="Record every payment method used. Multiple payment splits and banks are supported."
         actions={
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span className={`rounded-md px-3 py-1.5 ${paidAmount > 0 ? "border border-green-200 bg-green-50 text-[#15803D]" : "border border-[#E5E7EB] bg-white text-[#6B7280]"}`}>Paid: {pkr(paidAmount)}</span>
@@ -379,16 +404,17 @@ export default function NewSalePageClient(props: {
       </AdminPanel>
 
       <AdminPanel
-        title="Step 3 — Submit for Admin approval"
+        title="Step 3 - Submit for Admin approval"
         description="Once submitted, Admin must approve before: 1) stock is deducted, 2) bike status becomes SOLD, 3) receipt generation is unlocked."
       >
         <AdminForm
           action={initiateSale}
-          submitLabel={canSubmit ? "Submit sale for Admin approval →" : "Please fill required fields"}
-          pendingLabel="Submitting sale…"
+          submitLabel={canSubmit ? "Submit sale for Admin approval" : "Please fill required fields"}
+          pendingLabel="Submitting sale..."
           confirmMessage={chosen ? `Submit sale for ${chosen.motorcycle?.brand?.name} ${chosen.motorcycle?.name} (${chosen.cc}cc ${chosen.color_name ?? "no color"}) for approval?` : "Continue"}
           className="grid grid-cols-1 gap-5 md:grid-cols-2"
           formAttributes={{ id: "main-sale-form" }}
+          showErrorSummary={false}
         >
           {/* ===== Discriminator: existing customer vs new customer ===== */}
           <input type="hidden" name="useExistingCustomer" value={createNewCustomer ? "false" : "true"} />

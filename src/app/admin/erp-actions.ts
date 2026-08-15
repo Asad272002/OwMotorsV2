@@ -184,6 +184,12 @@ function serviceRoleClient(): ServiceRoleClient {
 
 function revalidateERP() {
   revalidatePath("/admin", "layout");
+  revalidatePath("/admin/sales/new");
+  revalidatePath("/admin/sales/list");
+  revalidatePath("/admin/sales/approvals");
+  revalidatePath("/admin/stock/availability");
+  revalidatePath("/admin/receipts");
+  revalidatePath("/admin/activity");
 }
 
 // ==============================================
@@ -754,24 +760,12 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
         rejected: "rejected earlier",
         cancelled: "cancelled",
       };
-      try {
-        await writeActivity({
-          actorUserId: actor.userId,
-          actorRole: actor.profile.role,
-          action: "sale_requested",
-          summary: `Sale submission blocked (chasis duplicate): ${actor.profile.full_name ?? actor.userId} attempted chasis ${chasisNorm} but it already exists in sale ${firstRow.receipt_number ?? firstRow.id}.`,
-          targetTable: "sales",
-          targetId: firstRow.id,
-          metadata: { outcome: "blocked", reason: "chasis_duplicate", attempted_chasis: chasisNorm, existing_sale_id: firstRow.id, existing_sale_status: firstRow.sale_status, existing_sale_ref: firstRow.receipt_number ?? null },
-        });
-      } catch { /* noop */ }
       return {
         status: "error",
-        message: `Chasis # ${chasisNorm} is already registered in another sale (${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}${firstRow.receipt_number ? ` — ${firstRow.receipt_number}` : ""}). Each bike chasis can only be sold once.`,
+        message: `Chasis already exists${firstRow.receipt_number ? ` in ${firstRow.receipt_number}` : ""}.`,
         errors: {
           chasisNumber: [
-            `Chasis # ${chasisNorm} is already used in another sale record. Each motorcycle chasis number must be unique across all sales — no duplicates allowed.`,
-            `Existing record status: ${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}${firstRow.receipt_number ? ` (${firstRow.receipt_number})` : ""}`,
+            `Already used${firstRow.receipt_number ? ` in ${firstRow.receipt_number}` : ""}. Status: ${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}.`,
           ],
         },
       };
@@ -796,48 +790,21 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const payments = paymentsRawAll.filter(p => Number(p.amount) > 0);
   const totalPaidSubmitted = payments.reduce((t, p) => t + (Number(p.amount) || 0), 0);
   if (payments.length === 0 || totalPaidSubmitted <= 0) {
-    try {
-      await writeActivity({
-        actorUserId: actor.userId,
-        actorRole: actor.profile.role,
-        action: "sale_requested",
-        summary: `Sale submission blocked (no payment): ${actor.profile.full_name ?? actor.userId} attempted to submit sale for ${vErr || !variant ? "Unknown bike" : ""} chasis ${String(parsed.data.chasisNumber ?? "").trim().toUpperCase()} but recorded PKR 0 paid of PKR ${total.toLocaleString("en-PK")}.`,
-        targetTable: "sales",
-        targetId: null,
-        metadata: { outcome: "blocked", reason: "no_payment", chasis_number: String(parsed.data.chasisNumber ?? "").trim().toUpperCase(), customer_id: customerId, motorcycle_variant_id: parsed.data.motorcycleVariantId, total, totalPaidSubmitted, paymentsRawLen: paymentsRawAll.length },
-      });
-    } catch { /* noop */ }
     return {
       status: "error",
-      message: "At least one payment is required before submitting a sale for approval.",
+      message: "Add at least one payment before submitting.",
       errors: {
-        paymentsJson: [
-          "You have not recorded any payment amount yet.",
-          "Sale cannot be submitted for approval unless at least one payment is recorded.",
-          "Fill in the Amount (PKR) for at least one payment split above.",
-        ],
+        paymentsJson: ["Add a payment amount greater than 0."],
       },
     };
   }
   if (totalPaidSubmitted < Number(total ?? 0)) {
-    try {
-      await writeActivity({
-        actorUserId: actor.userId,
-        actorRole: actor.profile.role,
-        action: "sale_requested",
-        summary: `Sale submission blocked (underpaid): ${actor.profile.full_name ?? actor.userId} attempted to submit sale chasis ${String(parsed.data.chasisNumber ?? "").trim().toUpperCase()} but paid PKR ${totalPaidSubmitted.toLocaleString("en-PK")} of PKR ${(Number(total) || 0).toLocaleString("en-PK")}.`,
-        targetTable: "sales",
-        targetId: null,
-        metadata: { outcome: "blocked", reason: "underpaid", chasis_number: String(parsed.data.chasisNumber ?? "").trim().toUpperCase(), customer_id: customerId, motorcycle_variant_id: parsed.data.motorcycleVariantId, total, totalPaidSubmitted, paymentsCount: payments.length },
-      });
-    } catch { /* noop */ }
     return {
       status: "error",
-      message: `Total paid (PKR ${totalPaidSubmitted.toLocaleString("en-PK")}) is less than sale total (PKR ${(Number(total) || 0).toLocaleString("en-PK")}).`,
+      message: `Payment is short by PKR ${Math.max(0, Number(total) - totalPaidSubmitted).toLocaleString("en-PK")}.`,
       errors: {
         paymentsJson: [
-          `Total paid PKR ${totalPaidSubmitted.toLocaleString("en-PK")} does not cover the sale total of PKR ${(Number(total) || 0).toLocaleString("en-PK")}.`,
-          "Sales cannot be approved until the full balance is paid. Add more payment splits to cover the balance.",
+          `Add PKR ${Math.max(0, Number(total) - totalPaidSubmitted).toLocaleString("en-PK")} more to match the sale total.`,
         ],
       },
     };
@@ -928,18 +895,11 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
       await sb.from("sale_payments").delete().eq("sale_id", saleId);
       await sb.from("sales").delete().eq("id", saleId);
     } catch { /* noop */ }
-    try {
-      await writeActivity({
-        actorUserId: actor.userId,
-        actorRole: actor.profile.role,
-        action: "sale_requested",
-        summary: `Sale submission failed while recording payment splits. Sale ${receiptNumber} rolled back. Recorded ${recordedPayments}/${payments.length} payments.`,
-        targetTable: "sales",
-        targetId: saleId,
-        metadata: { outcome: "failed", reason: "payment_insert_failed", receipt_number: receiptNumber, saleId, recordedPayments, expectedPayments: payments.length, total, totalPaidSubmitted },
-      });
-    } catch { /* noop */ }
-    return { status: "error", message: "Sale could not be submitted because payment recording failed. Please try again." };
+    return {
+      status: "error",
+      message: "Payment details could not be saved. Please check the payment split and submit again.",
+      errors: { paymentsJson: ["Payment details could not be saved."] },
+    };
   }
 
   await writeActivity({
@@ -1044,14 +1004,6 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
       const upd = await sb.from("motorcycle_variants").update({ quantity: newQty, stock_status: newStatus }).eq("id", sale.motorcycle_variant_id);
       if (!upd.error) stockDeducted = { before: currentQty, after: newQty };
     }
-    const rec = await sb.from("receipts").insert({
-      sale_id: sale.id,
-      receipt_number: sale.receipt_number,
-      generated_at: now,
-      generated_by: actor.userId,
-    }).select("id").maybeSingle();
-    if (rec.error) console.warn("receipt auto insert after sale approve failed:", rec.error);
-
     if (sale.customer?.id && sale.chasis_number) {
       const custRow = await sb.from("customers").select("chasis_numbers").eq("id", sale.customer.id).maybeSingle();
       if (!custRow.error && custRow.data) {
@@ -1075,6 +1027,21 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
   if (error) return databaseAction("decideSale", error);
 
   if (parsed.data.decision === "approved") {
+    if (stockDeducted) {
+      const stockMovementAppliedUpdate = {
+        applied: true,
+        applied_at: now,
+        approved_by: actor.userId,
+        approved_at: now,
+      } as unknown as Database["public"]["Tables"]["stock_movements"]["Update"];
+      await sb
+        .from("stock_movements")
+        .update(stockMovementAppliedUpdate)
+        .eq("motorcycle_variant_id", sale.motorcycle_variant_id)
+        .eq("movement_type", "sale_deduction")
+        .eq("reason", `Sale auto-deduction for receipt ${sale.receipt_number}`);
+    }
+
     await writeActivity({
       actorUserId: actor.userId,
       actorRole: actor.profile.role,

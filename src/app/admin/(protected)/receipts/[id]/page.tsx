@@ -115,7 +115,7 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
         <ReceiptPrintActionBar receiptNumber={displayReceiptNumber} />
 
         <section data-receipt-root className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none" style={{ fontFamily: "Rajdhani, Inter, system-ui, sans-serif" }}>
-          <header className="relative overflow-hidden border-b-4 border-[#C62828] bg-gradient-to-br from-white via-[#FFF8F8] to-[#FEF2F2] px-6 py-4 print:px-6 print:py-4">
+          <header className="relative overflow-hidden border-b-4 border-[#C62828] bg-gradient-to-br from-white via-[#FFF8F8] to-[#FEF2F2] px-6 py-4 print:px-5 print:py-3">
             <div aria-hidden className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-[#C62828]/5 blur-3xl" />
             <div className="relative flex flex-wrap items-start justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -123,7 +123,7 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
                   <Image src="/images/ow-motors-logo.png" alt="OW Motors" width={1536} height={1024} className="h-full w-full object-contain" priority />
                 </div>
                 <div>
-                  <p className="font-display text-3xl font-black leading-none tracking-[-0.02em] text-[#111111]">OW MOTORS</p>
+                  <p className="font-display text-3xl font-black leading-none tracking-normal text-[#111111]">OW MOTORS</p>
                   <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Multi-Brand Motorcycle Showroom</p>
                   <div className="mt-1.5 grid grid-cols-1 gap-0.5 text-[11px] text-[#374151]">
                     <span className="inline-flex items-start gap-1.5"><MapPin aria-hidden className="h-3.5 w-3.5 shrink-0 text-[#C62828] mt-0.5" />{SHOWROOM.address}</span>
@@ -133,8 +133,8 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
                 </div>
               </div>
               <div className="text-right">
-                <p className="font-display text-4xl font-black tracking-[-0.03em] text-[#C62828] leading-none">RECEIPT</p>
-                <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.22em] text-[#6B7280]">Sale Invoice · Motor Vehicle</p>
+                <p className="font-display text-4xl font-black tracking-normal text-[#C62828] leading-none">RECEIPT</p>
+                <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.22em] text-[#6B7280]">Sale Invoice | Motor Vehicle</p>
                 <dl className="mt-2 space-y-0.5 border border-[#E5E7EB] bg-white/80 p-2 text-[11px]">
                   <div className="flex justify-between gap-6"><dt className="text-[#6B7280]">Receipt No.</dt><dd className="font-mono font-bold text-[#111111]">{displayReceiptNumber}</dd></div>
                   <div className="flex justify-between gap-6"><dt className="text-[#6B7280]">Sale Ref.</dt><dd className="font-mono">{saleRefNumber}</dd></div>
@@ -145,15 +145,15 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
             </div>
           </header>
 
-          <div className="grid grid-cols-1 gap-5 px-6 py-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 px-6 py-4 md:grid-cols-2 print:gap-3 print:px-5 print:py-3">
             <section>
               <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Customer Information</h2>
               <dl className="mt-2 space-y-1 rounded-md border border-[#E5E7EB] bg-[#FAFAFA] p-3 text-[12px]">
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Full name</dt><dd className="font-semibold text-[#111111]">{s.customer?.full_name ?? "—"}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">CNIC No.</dt><dd className="font-mono font-semibold">{s.customer?.cnic ?? "—"}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Phone</dt><dd className="font-mono font-semibold">{s.customer?.phone_primary ?? "—"}{s.customer?.phone_secondary ? <> · {s.customer.phone_secondary}</> : null}</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">City</dt><dd className="font-semibold">{s.customer?.city ?? "—"}</dd></div>
-                <div className="flex flex-col gap-0.5"><dt className="text-[#6B7280]">Address</dt><dd className="font-semibold leading-4 text-[#111111]">{s.customer?.address ?? "—"}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Full name</dt><dd className="font-semibold text-[#111111]">{s.customer?.full_name ?? "-"}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">CNIC No.</dt><dd className="font-mono font-semibold">{s.customer?.cnic ?? "-"}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Phone</dt><dd className="font-mono font-semibold">{s.customer?.phone_primary ?? "-"}{s.customer?.phone_secondary ? <> | {s.customer.phone_secondary}</> : null}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">City</dt><dd className="font-semibold">{s.customer?.city ?? "-"}</dd></div>
+                <div className="flex flex-col gap-0.5"><dt className="text-[#6B7280]">Address</dt><dd className="font-semibold leading-4 text-[#111111]">{s.customer?.address ?? "-"}</dd></div>
               </dl>
             </section>
 
@@ -163,14 +163,14 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
                 <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Brand</dt><dd className="font-display text-base font-bold text-[#111111]">{s.brand_name_snapshot}</dd></div>
                 <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Model</dt><dd className="font-display text-base font-bold text-[#111111]">{s.motorcycle_name_snapshot}</dd></div>
                 <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Displacement</dt><dd className="font-semibold">{s.cc_snapshot} cc</dd></div>
-                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Color</dt><dd className="font-semibold">{s.color_name_snapshot ?? "—"}</dd></div>
+                <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Color</dt><dd className="font-semibold">{s.color_name_snapshot ?? "-"}</dd></div>
                 <div className="flex justify-between gap-4 border-b border-white pb-1"><dt className="text-[#6B7280]">Chasis No.</dt><dd className="font-mono font-bold text-[#C62828]">{s.chasis_number}</dd></div>
-                <div className="flex justify-between gap-4"><dt className="text-[#6B7280]">Quantity</dt><dd className="font-display text-xl font-black text-[#111111]">× {qty}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-[#6B7280]">Quantity</dt><dd className="font-display text-xl font-black text-[#111111]">x {qty}</dd></div>
               </dl>
             </section>
           </div>
 
-          <div className="px-6 pb-5">
+          <div className="px-6 pb-5 print:px-5 print:pb-3">
             <h2 className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#C62828]">Payment Breakdown</h2>
             <p className="mt-0.5 text-[11px] text-[#6B7280]">Record of every payment method and bank used for this sale.</p>
             <div className="mt-2 overflow-hidden rounded-md border border-[#E5E7EB]">
@@ -215,7 +215,7 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
                       <tr key={String(p.id ?? i)} className="hover:bg-[#FAFAFA]">
                         <td className="px-2.5 py-1.5 text-[#6B7280]">{i + 1}</td>
                         <td className="px-2.5 py-1.5 font-semibold">{methodLabel[methodKey] ?? methodKey.replaceAll("_", " ")}</td>
-                        <td className="px-2.5 py-1.5">{bankName ? bankName : <span className="text-[#9CA3AF]">—</span>}</td>
+                        <td className="px-2.5 py-1.5">{bankName ? bankName : <span className="text-[#9CA3AF]">-</span>}</td>
                         <td className="px-2.5 py-1.5 font-mono text-[11px]">{instrument}</td>
                         <td className="px-2.5 py-1.5 font-mono text-[11px]">{txnRef}</td>
                         <td className="px-2.5 py-1.5 text-right font-mono font-bold">{amountNum.toLocaleString("en-PK")}</td>
@@ -239,7 +239,7 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
                 </tfoot>
               </table>
             </div>
-            <p className="mt-3 text-center font-display text-2xl font-black tracking-[-0.02em] text-[#C62828]">
+            <p className="mt-3 text-center font-display text-2xl font-black tracking-normal text-[#C62828] print:mt-2 print:text-xl">
               TOTAL RECEIVED: {pkr(totalPaid)}
             </p>
             <p className="text-center text-[11px] text-[#6B7280]">Rupees in words: <span className="font-semibold text-[#111111]">{numberToPKRWords(totalPaid)}</span></p>
@@ -252,24 +252,24 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-6 border-t border-gray-200 bg-[#FAFAFA] px-6 py-5">
+          <div className="grid grid-cols-2 gap-6 border-t border-gray-200 bg-[#FAFAFA] px-6 py-5 print:px-5 print:py-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B7280]">For OW Motors</p>
-              <p className="mt-10 border-b border-dashed border-[#9CA3AF]" />
+              <p className="mt-10 border-b border-dashed border-[#9CA3AF] print:mt-6" />
               <p className="mt-2 text-[12px] font-semibold">Manager / Authorized Signatory</p>
               <p className="text-[11px] text-[#6B7280]">Name, Signature & Stamp</p>
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#6B7280]">Customer Acknowledgment</p>
               <p className="mt-2 text-[11px] leading-4 text-[#374151]">I hereby confirm receiving the above vehicle in good, roadworthy condition along with all documents and accessories. I acknowledge the payment split as stated above.</p>
-              <p className="mt-4 border-b border-dashed border-[#9CA3AF]" />
+              <p className="mt-4 border-b border-dashed border-[#9CA3AF] print:mt-3" />
               <p className="mt-2 text-[12px] font-semibold">Customer Signature & Name</p>
               <p className="text-[11px] text-[#6B7280]">Date: ______________________</p>
             </div>
           </div>
 
-          <footer className="border-t-2 border-[#C62828] bg-[#C62828]/5 px-6 py-3 text-center text-[11px] text-[#6B7280]">
-            <p className="font-semibold text-[#111111]">Thank you for choosing OW MOTORS — Ride Safe, Ride Happy!</p>
+          <footer className="border-t-2 border-[#C62828] bg-[#C62828]/5 px-6 py-3 text-center text-[11px] text-[#6B7280] print:px-5 print:py-2">
+            <p className="font-semibold text-[#111111]">Thank you for choosing OW MOTORS - Ride Safe, Ride Happy!</p>
             <p className="mt-0.5 text-[10px]">This is a computer-generated receipt. No signature required for validity. Subject to showroom terms & conditions. Vehicle subject to manufacturer warranty. All disputes subject to Lahore courts.</p>
           </footer>
         </section>

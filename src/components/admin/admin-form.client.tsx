@@ -84,6 +84,7 @@ export function AdminForm({
   confirmMessage,
   destructive = false,
   showStatus,
+  showErrorSummary = true,
   className = "space-y-5",
   hideAutoSubmit = false,
   formAttributes,
@@ -95,6 +96,7 @@ export function AdminForm({
   confirmMessage?: string;
   destructive?: boolean;
   showStatus?: boolean;
+  showErrorSummary?: boolean;
   className?: string;
   hideAutoSubmit?: boolean;
   formAttributes?: React.FormHTMLAttributes<HTMLFormElement>;
@@ -183,7 +185,7 @@ export function AdminForm({
         }}
       >
         {children}
-        {state.errors ? (
+        {showErrorSummary && state.errors ? (
           <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-4">
             <p className="text-sm font-semibold text-[#C62828]">Review the highlighted information</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#991B1B]">{Object.entries(state.errors).flatMap(([field, messages], _outer) => (messages ?? []).map((message, inner) => <li key={`${field}-${inner}-${String(message ?? "msg").slice(0, 40)}`}>{message}</li>))}</ul>

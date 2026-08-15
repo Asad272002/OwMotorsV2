@@ -440,11 +440,22 @@ export const listActivityLogs = cache(async (limit = 200): Promise<readonly Acti
     return [];
   }
   const logs = ((data as unknown as ActivityLogRow[]) ?? []);
-  const saleIds = logs
+  const logsWithActor = new Set(
+    logs
+      .filter((log) => log.actor_id)
+      .map((log) => `${log.action}:${log.target_table ?? ""}:${log.target_id ?? ""}`)
+  );
+  const visibleLogs = logs.filter((log) => {
+    const metadata = log.metadata as { outcome?: unknown } | null;
+    if (log.action === "sale_requested" && metadata?.outcome === "blocked") return false;
+    if (log.actor_id) return true;
+    return !logsWithActor.has(`${log.action}:${log.target_table ?? ""}:${log.target_id ?? ""}`);
+  });
+  const saleIds = visibleLogs
     .filter((log) => log.target_table === "sales" && log.target_id)
     .map((log) => log.target_id)
     .filter((id): id is string => typeof id === "string");
-  const receiptIds = logs
+  const receiptIds = visibleLogs
     .filter((log) => log.target_table === "receipts" && log.target_id)
     .map((log) => log.target_id)
     .filter((id): id is string => typeof id === "string");
@@ -488,7 +499,7 @@ export const listActivityLogs = cache(async (limit = 200): Promise<readonly Acti
   }
 
   const profileIds = new Set<string>();
-  for (const log of logs) {
+  for (const log of visibleLogs) {
     if (log.actor_id) profileIds.add(log.actor_id);
     const sale = log.target_table === "sales" && log.target_id ? sales.get(log.target_id) : null;
     const receipt = log.target_table === "receipts" && log.target_id ? receipts.get(log.target_id) : null;
@@ -503,7 +514,7 @@ export const listActivityLogs = cache(async (limit = 200): Promise<readonly Acti
   if (profilesResult.error) console.error("[OW Motors activity profile lookup failed]", { code: profilesResult.error.code, message: profilesResult.error.message });
   const profiles = new Map((profilesResult.data as unknown as ActivityActor[]).map((profile) => [profile.id, profile]));
 
-  return logs.map((log) => {
+  return visibleLogs.map((log) => {
     const sale = log.target_table === "sales" && log.target_id ? sales.get(log.target_id) : null;
     const receipt = log.target_table === "receipts" && log.target_id ? receipts.get(log.target_id) : null;
     const receiptForSale = sale?.id ? receiptsBySale.get(sale.id) : null;
