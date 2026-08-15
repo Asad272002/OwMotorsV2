@@ -93,7 +93,16 @@ export default async function SalesListPage() {
                       <p className="font-display text-lg font-bold text-[#C62828]">{pkr(s.total_amount ?? 0)}</p>
                       <p className="text-[11px] text-[#6B7280]">{pkr(paid)} paid · {pkr(due)} due</p>
                     </td>
-                    <td className="px-4 py-3 text-center"><StatusBadge value={meta.badge} label={meta.label} /></td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadge value={meta.badge} label={meta.label} />
+                      {s.sale_status === "rejected" && s.rejection_reason ? (
+                        <div className="mx-auto mt-2 max-w-sm rounded-md border border-[#FECACA] bg-[#FEF2F2] p-2 text-left text-[11px] leading-4 text-[#C62828]">
+                        <p className="font-bold uppercase tracking-wider">Rejection reason:</p>
+                        <p className="mt-0.5">{String(s.rejection_reason)}</p>
+                        {s.rejected_at ? <p className="mt-1 text-[10px] text-[#991B1B] opacity-80">{s.rejected_by_profile ? ` — by ${(s.rejected_by_profile as { full_name?: string }).full_name ?? ""}` : ""}{s.rejected_at ? ` @ ${new Date(s.rejected_at).toLocaleString()}` : ""}</p> : null}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         {s.receipt_generated ? (
