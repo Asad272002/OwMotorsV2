@@ -809,6 +809,8 @@ export type Database = {
           current_stock: number;
           reorder_level: number;
           unit_cost: number;
+          compatible_brand_id: string | null;
+          compatible_motorcycle_id: string | null;
           location: string | null;
           is_active: boolean;
           created_by: string;
@@ -825,6 +827,8 @@ export type Database = {
           current_stock?: number;
           reorder_level?: number;
           unit_cost: number;
+          compatible_brand_id?: string | null;
+          compatible_motorcycle_id?: string | null;
           location?: string | null;
           is_active?: boolean;
           created_by: string;
@@ -841,6 +845,8 @@ export type Database = {
           current_stock?: number;
           reorder_level?: number;
           unit_cost?: number;
+          compatible_brand_id?: string | null;
+          compatible_motorcycle_id?: string | null;
           location?: string | null;
           is_active?: boolean;
           created_by?: string;
@@ -849,6 +855,8 @@ export type Database = {
         };
         Relationships: [
           { foreignKeyName: "parts_created_by_fkey"; columns: ["created_by"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "parts_compatible_brand_id_fkey"; columns: ["compatible_brand_id"]; isOneToOne: false; referencedRelation: "brands"; referencedColumns: ["id"] },
+          { foreignKeyName: "parts_compatible_motorcycle_id_fkey"; columns: ["compatible_motorcycle_id"]; isOneToOne: false; referencedRelation: "motorcycles"; referencedColumns: ["id"] },
         ];
       };
       stock_movements: {

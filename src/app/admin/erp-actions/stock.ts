@@ -17,10 +17,23 @@ export async function createOrUpdatePart(_prev: AdminActionState, formData: Form
   if (!parsed.success) return validationAction(parsed.error);
 
   const supabase = await import("@/lib/supabase/server").then(m => m.createServerSupabaseClient());
+  const compatibleMotorcycleId = parsed.data.compatibleMotorcycleId || null;
+  let compatibleBrandId = parsed.data.compatibleBrandId || null;
+  if (compatibleMotorcycleId) {
+    const bike = await supabase
+      .from("motorcycles")
+      .select("brand_id")
+      .eq("id", compatibleMotorcycleId)
+      .maybeSingle();
+    const brandId = (bike.data as { brand_id?: string | null } | null)?.brand_id ?? null;
+    if (brandId) compatibleBrandId = brandId;
+  }
   const values = {
     sku: parsed.data.sku, name: parsed.data.name, description: parsed.data.description,
     category: parsed.data.category, unit: parsed.data.unit, current_stock: parsed.data.currentStock,
     reorder_level: parsed.data.reorderLevel, unit_cost: parsed.data.unitCost,
+    compatible_brand_id: compatibleBrandId,
+    compatible_motorcycle_id: compatibleMotorcycleId,
     location: parsed.data.location, is_active: parsed.data.isActive,
     created_by: actor.userId
   };
@@ -30,8 +43,20 @@ export async function createOrUpdatePart(_prev: AdminActionState, formData: Form
     const { created_by, ...updateValues } = values;
     void created_by;
     ({ error: err } = await supabase.from("parts").update(updateValues).eq("id", parsed.data.id));
+    if (err?.code === "42703") {
+      const { compatible_brand_id, compatible_motorcycle_id, ...legacyValues } = updateValues;
+      void compatible_brand_id;
+      void compatible_motorcycle_id;
+      ({ error: err } = await supabase.from("parts").update(legacyValues).eq("id", parsed.data.id));
+    }
   } else {
     ({ error: err } = await supabase.from("parts").insert(values));
+    if (err?.code === "42703") {
+      const { compatible_brand_id, compatible_motorcycle_id, ...legacyValues } = values;
+      void compatible_brand_id;
+      void compatible_motorcycle_id;
+      ({ error: err } = await supabase.from("parts").insert(legacyValues));
+    }
   }
   if (err) return databaseAction("createOrUpdatePart", err);
   revalidateERP();
@@ -112,8 +137,9 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
     approval_status: "pending_approval",
   };
 
-  const { error } = await supabase.from("stock_movements").insert(insertPayload);
+  const { data: insertedMovement, error } = await supabase.from("stock_movements").insert(insertPayload).select("id").maybeSingle();
   if (error) return databaseAction("requestStockMovement", error);
+  const movementId = (insertedMovement as { id?: string } | null)?.id ?? null;
 
   try {
     await writeActivity({
@@ -122,8 +148,9 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
       action: "stock_requested",
       summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} created stock change request — ${parsed.data.movementType} × ${parsed.data.quantity}. Variant #${parsed.data.motorcycleVariantId?.slice(0, 8) ?? "-"} / Part #${parsed.data.partId?.slice(0, 8) ?? "-"}. Unit cost snapshot PKR ${resolvedUnitCostAtTime ?? 0}.`,
       targetTable: "stock_movements",
-      targetId: null,
+      targetId: movementId,
       metadata: {
+        event: "stock_change_requested",
         movement_type: parsed.data.movementType,
         motorcycle_variant_id: parsed.data.motorcycleVariantId ?? null,
         part_id: parsed.data.partId ?? null,
@@ -182,31 +209,17 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
   }
 
   const nowIso = new Date().toISOString();
-  const updateBase: Database["public"]["Tables"]["stock_movements"]["Update"] = isApproved
-    ? {
-        approval_status: "approved",
-        approved_by: actor.userId,
-        approved_at: nowIso,
-        applied: true,
-      }
-    : {
-        approval_status: "rejected",
-        rejected_by: actor.userId,
-        rejected_at: nowIso,
-        rejection_reason: (parsed.data.rejectionReason && parsed.data.rejectionReason.length >= 3 ? parsed.data.rejectionReason : null) as string | null,
-      };
-
   try {
-    const { error: updErr } = await sbService.from("stock_movements").update(updateBase).eq("id", parsed.data.id);
-    if (updErr) return databaseAction("decideStockMovement status", updErr);
-
     if (isApproved) {
       if (variantDeltaQty !== 0 && m.motorcycle_variant_id) {
         const cur = await sbService.from("motorcycle_variants").select("quantity, stock_status").eq("id", m.motorcycle_variant_id).maybeSingle();
         if (cur.error || !cur.data) return { status: "error", message: "Variant not found." };
         const row = cur.data as unknown as { quantity: number; stock_status: string };
         const oldQty = Number(row.quantity) || 0;
-        const newQty = Math.max(0, oldQty + variantDeltaQty);
+        if (variantDeltaQty < 0 && oldQty + variantDeltaQty < 0) {
+          return { status: "error", message: `Cannot approve: bike stock has ${oldQty} unit(s), request subtracts ${Math.abs(variantDeltaQty)}.` };
+        }
+        const newQty = oldQty + variantDeltaQty;
         const newStatus: "in_stock" | "out_of_stock"
           = newQty <= 0 ? "out_of_stock" : "in_stock";
         const { error: vErr } = await sbService
@@ -220,7 +233,10 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
         if (cur.error || !cur.data) return { status: "error", message: "Part not found." };
         const row = cur.data as unknown as { current_stock: number };
         const oldQty = Number(row.current_stock) || 0;
-        const newQty = Math.max(0, oldQty + partDeltaQty);
+        if (partDeltaQty < 0 && oldQty + partDeltaQty < 0) {
+          return { status: "error", message: `Cannot approve: part stock has ${oldQty} unit(s), request subtracts ${Math.abs(partDeltaQty)}.` };
+        }
+        const newQty = oldQty + partDeltaQty;
         const { error: pErr } = await sbService
           .from("parts")
           .update({ current_stock: newQty })
@@ -228,6 +244,22 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
         if (pErr) return databaseAction("Part stock update", pErr);
       }
     }
+
+    const updateBase: Database["public"]["Tables"]["stock_movements"]["Update"] = isApproved
+      ? {
+          approval_status: "approved",
+          approved_by: actor.userId,
+          approved_at: nowIso,
+          applied: true,
+        }
+      : {
+          approval_status: "rejected",
+          rejected_by: actor.userId,
+          rejected_at: nowIso,
+          rejection_reason: (parsed.data.rejectionReason && parsed.data.rejectionReason.length >= 3 ? parsed.data.rejectionReason : null) as string | null,
+        };
+    const { error: updErr } = await sbService.from("stock_movements").update(updateBase).eq("id", parsed.data.id);
+    if (updErr) return databaseAction("decideStockMovement status", updErr);
   } catch (applyCatch) {
     const msg = applyCatch instanceof Error ? applyCatch.message : String(applyCatch ?? "Apply failed");
     return { status: "error", message: msg };

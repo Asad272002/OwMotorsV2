@@ -40,6 +40,10 @@ export interface Part {
   readonly current_stock: number;
   readonly reorder_level: number;
   readonly unit_cost: number;
+  readonly compatible_brand_id?: string | null;
+  readonly compatible_motorcycle_id?: string | null;
+  readonly compatible_brand?: { readonly id: string; readonly name: string; readonly slug?: string | null } | null;
+  readonly compatible_motorcycle?: { readonly id: string; readonly name: string; readonly slug?: string | null; readonly brand?: { readonly id: string; readonly name: string; readonly slug?: string | null } | null } | null;
   readonly location: string | null;
   readonly is_active: boolean;
   readonly created_at: string;

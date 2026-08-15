@@ -190,6 +190,8 @@ export const partSchema = z.object({
     const n = Number(String(val).replace(/[^0-9.]/g, "") || "0");
     return Number.isFinite(n) && n >= 0 ? n : 0;
   }, z.coerce.number().min(0).max(1_000_000_000)),
+  compatibleBrandId: uuid.optional().or(z.literal("")),
+  compatibleMotorcycleId: uuid.optional().or(z.literal("")),
   location: optionalString(z.string().trim().min(2).max(120)),
   isActive: checkbox,
 });

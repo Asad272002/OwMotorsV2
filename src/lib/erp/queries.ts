@@ -72,10 +72,17 @@ export const listBanks = cache(async (): Promise<readonly Bank[]> => {
 
 export const listParts = cache(async (): Promise<readonly Part[]> => {
   const supabase = await createServerSupabaseClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("parts")
-    .select("*")
+    .select("*, compatible_brand:brands(id, name, slug), compatible_motorcycle:motorcycles(id, name, slug, brand:brands(id, name, slug))")
     .order("name", { ascending: true });
+  if (error) {
+    const fallback = await supabase
+      .from("parts")
+      .select("*")
+      .order("name", { ascending: true });
+    return (fallback.data as Part[]) ?? [];
+  }
   return (data as Part[]) ?? [];
 });
 
@@ -105,7 +112,7 @@ export async function getPart(id: string): Promise<Part | null> {
 
 export const listStockMovements = cache(async (): Promise<readonly StockMovementWithDetails[]> => {
   const supabase = await createServerSupabaseClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("stock_movements")
     .select(`
       *,
@@ -113,11 +120,27 @@ export const listStockMovements = cache(async (): Promise<readonly StockMovement
         id, cc, color_name, quantity, stock_status,
         motorcycle:motorcycles(name, brand:brands(id, name, slug))
       ),
-      part:parts(id, name, sku, current_stock, unit_cost),
+      part:parts(id, name, sku, current_stock, unit_cost, compatible_brand_id, compatible_motorcycle_id, compatible_brand:brands(id, name, slug), compatible_motorcycle:motorcycles(id, name, slug, brand:brands(id, name, slug))),
       requestor:profiles!stock_movements_requested_by_fkey(full_name, role),
       approver:profiles!stock_movements_approved_by_fkey(full_name, role)
     `)
     .order("created_at", { ascending: false });
+  if (error) {
+    const fallback = await supabase
+      .from("stock_movements")
+      .select(`
+        *,
+        variant:motorcycle_variants(
+          id, cc, color_name, quantity, stock_status,
+          motorcycle:motorcycles(name, brand:brands(id, name, slug))
+        ),
+        part:parts(id, name, sku, current_stock, unit_cost),
+        requestor:profiles!stock_movements_requested_by_fkey(full_name, role),
+        approver:profiles!stock_movements_approved_by_fkey(full_name, role)
+      `)
+      .order("created_at", { ascending: false });
+    return (fallback.data as unknown as StockMovementWithDetails[]) ?? [];
+  }
   return (data as unknown as StockMovementWithDetails[]) ?? [];
 });
 
@@ -133,7 +156,7 @@ export async function getStockMovement(id: string): Promise<StockMovementWithDet
     .select(`
       *,
       variant:motorcycle_variants(id, cc, color_name, quantity, stock_status, motorcycle:motorcycles(name, brand:brands(id, name, slug))),
-      part:parts(id, name, sku, current_stock, unit_cost),
+      part:parts(id, name, sku, current_stock, unit_cost, compatible_brand_id, compatible_motorcycle_id, compatible_brand:brands(id, name, slug), compatible_motorcycle:motorcycles(id, name, slug, brand:brands(id, name, slug))),
       requestor:profiles!stock_movements_requested_by_fkey(full_name, role),
       approver:profiles!stock_movements_approved_by_fkey(full_name, role)
     `)
