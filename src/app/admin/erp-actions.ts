@@ -17,6 +17,51 @@ import type { PaymentMethod, SaleStatus, StockApprovalStatus } from "@/lib/erp/t
 import type { Database } from "@/lib/supabase/database.types";
 type ActivityRowInsert = Database["public"]["Tables"]["activity_logs"]["Insert"];
 
+// All activity action values ever produced by code. If the postgres enum
+// `ActivityAction` does not yet contain a value, we ALTER TYPE to add it
+// before the insert so writes never fail due to enum invalid input.
+const ACTIVITY_ACTION_VALUES: readonly string[] = [
+  "login_success",
+  "login_failed",
+  "user_created",
+  "user_updated",
+  "user_revoked",
+  "part_created",
+  "part_updated",
+  "variant_updated",
+  "stock_requested",
+  "stock_approved",
+  "stock_rejected",
+  "stock_applied",
+  "sale_submitted",
+  "sale_approved",
+  "sale_rejected",
+  "sale_completed",
+  "sale_cancelled",
+  "receipt_generated",
+  "inventory_adjusted",
+];
+
+let actionEnumEnsured = false;
+async function ensureActivityActionsEnum(sb: SupabaseClient<Database>): Promise<void> {
+  if (actionEnumEnsured) return;
+  actionEnumEnsured = true;
+  try {
+    for (const value of ACTIVITY_ACTION_VALUES) {
+      try {
+        await sb.rpc("alter_type_add_value_if_not_exists", {
+          type_name: "ActivityAction",
+          new_value: value,
+        });
+      } catch {
+        // no-op if the rpc doesn't exist; fallback below handles
+      }
+    }
+  } catch {
+    // best effort; the raw text fallback below will still work
+  }
+}
+
 // Guaranteed activity writer: direct INSERT via service role (no RPC, no RLS).
 // The previous rpc("log_activity") was being silently swallowed by try/catch
 // because it required a "summary" column (not nullable) and some action values
@@ -32,6 +77,8 @@ async function writeActivity(params: {
 }): Promise<void> {
   try {
     const now = new Date().toISOString();
+    const sb = serviceRoleClient();
+    await ensureActivityActionsEnum(sb);
     const row: ActivityRowInsert = {
       id: (typeof crypto !== "undefined" && "randomUUID" in (crypto ?? {}) ? crypto.randomUUID() : undefined),
       action: params.action as never,
@@ -43,11 +90,26 @@ async function writeActivity(params: {
       metadata: (params.metadata ?? null) as never,
       created_at: now,
     };
-    const sb = serviceRoleClient();
-    const { error } = await sb.from("activity_logs").insert(row);
-    if (error) console.warn("activity_logs insert failed:", error.message, error.details, error.hint, JSON.stringify(row));
+    const firstTry = await sb.from("activity_logs").insert(row);
+    if (!firstTry.error) return;
+    // Enum / column validation failed — fall back to raw insert without strict
+    // TypeScript shapes, because the action value or actor_role might not be
+    // inside the Postgres enum. The db columns are the source of truth here.
+    console.warn("activity_logs primary insert fell back (text cast mode):", firstTry.message, firstTry.details);
+    const fallback: Record<string, unknown> = {
+      created_at: now,
+      action: String(params.action || "unknown"),
+      actor_id: String(params.actorUserId),
+      summary: String(params.summary ?? ""),
+      target_table: params.targetTable ?? null,
+      target_id: params.targetId ?? null,
+      metadata: params.metadata ?? null,
+    };
+    if (params.actorRole) fallback.actor_role = String(params.actorRole);
+    const fallbackInsert = await (sb.from("activity_logs") as unknown as { insert: (r: Record<string, unknown>) => { error: PostgrestError | null } }).insert(fallback);
+    if (fallbackInsert.error) console.warn("[CRITICAL] activity_logs fallback insert failed:", fallbackInsert.error.message, fallbackInsert.error.details, JSON.stringify(fallback));
   } catch (e) {
-    console.warn("activity_logs catch:", e instanceof Error ? e.message : String(e));
+    console.warn("activity_logs catch-all:", e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -625,13 +687,39 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     }
   }
 
+  // 1b. Chasis number uniqueness (strict: across every row — sold, pending, rejected, completed; no duplicate ever allowed, prevents manager trying to resubmit same chasis as another sale)
+  const chasisNorm = String(parsed.data.chasisNumber ?? "").trim().toUpperCase();
+  if (chasisNorm.length >= 3) {
+    const chasisDup = await sb.from("sales").select("id,sale_status,receipt_number").ilike("chasis_number", chasisNorm).limit(3);
+    if (!chasisDup.error && chasisDup.data && chasisDup.data.length > 0) {
+      const firstRow = chasisDup.data[0] as unknown as { id: string; sale_status: string; receipt_number?: string | null };
+      const statusLabel: Record<string, string> = {
+        pending_approval: "pending approval",
+        approved: "approved (stock deducted)",
+        completed: "completed / receipt generated",
+        rejected: "rejected earlier",
+        cancelled: "cancelled",
+      };
+      return {
+        status: "error",
+        message: `Chasis # ${chasisNorm} is already registered in another sale (${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}${firstRow.receipt_number ? ` — ${firstRow.receipt_number}` : ""}). Each bike chasis can only be sold once.`,
+        errors: {
+          chasisNumber: [
+            `Chasis # ${chasisNorm} is already used in another sale record. Each motorcycle chasis number must be unique across all sales — no duplicates allowed.`,
+            `Existing record status: ${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}${firstRow.receipt_number ? ` (${firstRow.receipt_number})` : ""}`,
+          ],
+        },
+      };
+    }
+  }
+
   // 2. Lookup variant snapshot
   const { data: variant, error: vErr } = await sb
     .from("motorcycle_variants")
     .select("*, motorcycle:motorcycles(name, brand:brands(name))")
     .eq("id", parsed.data.motorcycleVariantId)
     .maybeSingle();
-  if (vErr || !variant) return { status: "error", message: "Variant not found." };
+  if (vErr || !variant) return { status: "error", message: "Variant not found.", errors: { motorcycleVariantId: ["Pick a valid bike from the grid above."] } };
 
   const unitPrice = parsed.data.unitPrice || 0;
   const qty = parsed.data.quantitySold || 1;
@@ -676,9 +764,36 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const saleId = insertedSale?.id;
   if (!saleId) return { status: "error", message: "Sale creation failed (no id returned)." };
 
-  // 4. Record any positive payment splits in the same submit (no extra clicks needed)
+  // 4. Record any positive payment splits in the same submit (no extra clicks needed). Require AT LEAST ONE positive payment (zero payments means nothing paid — reject immediately per user rule: sale should never go through till amount paid).
+  const paymentsRawAll = parsed.data.paymentsJson ?? [];
+  const payments = paymentsRawAll.filter(p => Number(p.amount) > 0);
+  const totalPaidSubmitted = payments.reduce((t, p) => t + (Number(p.amount) || 0), 0);
+  if (payments.length === 0 || totalPaidSubmitted <= 0) {
+    return {
+      status: "error",
+      message: "At least one payment is required before submitting a sale for approval.",
+      errors: {
+        paymentsJson: [
+          "You have not recorded any payment amount yet.",
+          "Sale cannot be submitted for approval unless at least one payment is recorded.",
+          "Fill in the Amount (PKR) for at least one payment split above.",
+        ],
+      },
+    };
+  }
+  if (totalPaidSubmitted < Number(total ?? 0)) {
+    return {
+      status: "error",
+      message: `Total paid (PKR ${totalPaidSubmitted.toLocaleString("en-PK")}) is less than sale total (PKR ${(Number(total) || 0).toLocaleString("en-PK")}).`,
+      errors: {
+        paymentsJson: [
+          `Total paid PKR ${totalPaidSubmitted.toLocaleString("en-PK")} does not cover the sale total of PKR ${(Number(total) || 0).toLocaleString("en-PK")}.`,
+          "Sales cannot be approved until the full balance is paid. Add more payment splits to cover the balance.",
+        ],
+      },
+    };
+  }
   let recordedPayments = 0;
-  const payments = (parsed.data.paymentsJson ?? []).filter(p => Number(p.amount) > 0);
   const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
   function serverTxnRef(): string {
     const now = new Date();
@@ -718,6 +833,16 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
       if (!insErr) recordedPayments += 1;
     }
   }
+
+  await writeActivity({
+    actorUserId: actor.userId,
+    actorRole: actor.profile.role,
+    action: "sale_submitted",
+    summary: `Manager ${actor.profile.full_name ?? actor.userId} SUBMITTED new sale ${receiptNumber} for approval. Bike: ${v.motorcycle?.brand?.name ?? variant.brand_name_snapshot ?? "Unknown"} ${v.motorcycle?.name ?? variant.motorcycle_name_snapshot ?? "Unknown"} ${variant.cc ?? ""}cc chasis ${parsed.data.chasisNumber} for customer ${customerId}. Total: PKR ${total.toLocaleString("en-PK")}. ${recordedPayments} payment split(s) attached — PKR ${totalPaidSubmitted.toLocaleString("en-PK")}.`,
+    targetTable: "sales",
+    targetId: saleId,
+    metadata: { sale: { receipt_number: receiptNumber, chasis_number: parsed.data.chasisNumber, motorcycle_variant_id: parsed.data.motorcycleVariantId, customer_id: customerId }, total, totalPaid: totalPaidSubmitted, paymentsCount: recordedPayments, payments },
+  });
 
   revalidateERP();
   return { status: "success", message: `Sale ${receiptNumber} submitted for approval. ${recordedPayments} payment split(s) attached.` };
@@ -764,14 +889,98 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
 
   const sb = serviceRoleClient();
   const now = new Date().toISOString();
+  const saleFull = await sb.from("sales").select(`
+    id, receipt_number, sale_status, total_amount, requested_at, motorcycle_variant_id, quantity_sold,
+    motorcycle_name_snapshot, brand_name_snapshot, cc_snapshot, color_name_snapshot, chasis_number,
+    customer:customers(id, full_name, cnic),
+    payments:sale_payments(id, amount, payment_method)
+  `).eq("id", parsed.data.id).maybeSingle();
+  if (saleFull.error || !saleFull.data) return { status: "error", message: "Sale not found." };
+  const sale = saleFull.data as unknown as {
+    id: string; receipt_number: string; sale_status: string; total_amount: number; motorcycle_variant_id: string;
+    quantity_sold: number; motorcycle_name_snapshot: string; brand_name_snapshot: string; cc_snapshot: number;
+    color_name_snapshot?: string | null; chasis_number: string;
+    customer?: { id: string; full_name: string; cnic: string } | null;
+    payments?: Array<{ id: string; amount: number; payment_method: string }> | null;
+  };
+  if (sale.sale_status !== "pending_approval") {
+    return { status: "error", message: `Sale already ${sale.sale_status}.` };
+  }
+  const paymentsArr = Array.isArray(sale.payments) ? sale.payments : [];
+  const paidTotal = paymentsArr.reduce((t, p) => t + (Number(p.amount) || 0), 0);
+  if (parsed.data.decision === "approved") {
+    if (paidTotal <= 0) return { status: "error", message: "Cannot approve: no payments recorded yet.", errors: { rejectionReason: ["Sale has PKR 0 paid. Require manager to record payments first before approving."] } };
+    if (paidTotal < Number(sale.total_amount ?? 0)) {
+      return {
+        status: "error",
+        message: `Cannot approve sale. Paid PKR ${paidTotal.toLocaleString("en-PK")} / Total PKR ${(Number(sale.total_amount) || 0).toLocaleString("en-PK")}.`,
+        errors: {
+          rejectionReason: [
+            `Sale is underpaid: PKR ${paidTotal.toLocaleString("en-PK")} paid vs PKR ${(Number(sale.total_amount) || 0).toLocaleString("en-PK")} total.`,
+            "Ask manager to record the remaining payment splits first, then approve; OR reject this sale and create a new one.",
+          ],
+        },
+      };
+    }
+  }
+
+  let stockDeducted: { before: number; after: number } | null = null;
+  if (parsed.data.decision === "approved") {
+    const beforeQty = await sb.from("motorcycle_variants").select("quantity, stock_status").eq("id", sale.motorcycle_variant_id).maybeSingle();
+    const currentQty = Number((beforeQty.data as unknown as { quantity: number | null })?.quantity ?? 0);
+    const qtySold = Number(sale.quantity_sold ?? 1);
+    if (!beforeQty.error && beforeQty.data) {
+      const newQty = Math.max(0, currentQty - qtySold);
+      const newStatus = newQty <= 0 ? "out_of_stock" : (beforeQty.data as unknown as { stock_status?: string | null }).stock_status === "out_of_stock" ? "in_stock" : (beforeQty.data as unknown as { stock_status?: string | null }).stock_status ?? "in_stock";
+      const upd = await sb.from("motorcycle_variants").update({ quantity: newQty, stock_status: newStatus }).eq("id", sale.motorcycle_variant_id);
+      if (!upd.error) stockDeducted = { before: currentQty, after: newQty };
+    }
+    const rec = await sb.from("receipts").insert({
+      sale_id: sale.id,
+      receipt_number: sale.receipt_number,
+      generated_at: now,
+      generated_by: actor.userId,
+      notes: null,
+    }).select("id").maybeSingle();
+    if (rec.error) console.warn("receipt auto insert after sale approve failed:", rec.error);
+  }
+
   const update = (parsed.data.decision === "approved"
     ? { sale_status: "approved" satisfies SaleStatus, approved_by: actor.userId, approved_at: now }
-    : { sale_status: "rejected" satisfies SaleStatus, rejected_by: actor.userId, rejected_at: now, rejection_reason: parsed.data.rejectionReason || null }
+    : { sale_status: "rejected" satisfies SaleStatus, rejected_by: actor.userId, rejected_at: now, rejection_reason: (parsed.data.rejectionReason && parsed.data.rejectionReason.length >= 3) ? parsed.data.rejectionReason : null }
   ) as unknown as Database["public"]["Tables"]["sales"]["Update"];
   const { error } = await sb.from("sales").update(update).eq("id", parsed.data.id);
   if (error) return databaseAction("decideSale", error);
+
+  if (parsed.data.decision === "approved") {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "sale_approved",
+      summary: `Admin ${actor.profile.full_name ?? actor.userId} APPROVED sale ${sale.receipt_number} for ${sale.brand_name_snapshot} ${sale.motorcycle_name_snapshot} ${sale.cc_snapshot}cc (chasis ${sale.chasis_number}). Paid PKR ${paidTotal.toLocaleString("en-PK")} of PKR ${(Number(sale.total_amount) || 0).toLocaleString("en-PK")}. Stock deducted variant qty ${stockDeducted ? `${stockDeducted.before} → ${stockDeducted.after}` : "skipped"}.`,
+      targetTable: "sales",
+      targetId: sale.id,
+      metadata: { sale: { receipt_number: sale.receipt_number, chasis_number: sale.chasis_number, customer: sale.customer }, stockDelta: stockDeducted ?? null, paidTotal, totalAmount: sale.total_amount },
+    });
+  } else {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "sale_rejected",
+      summary: `Admin ${actor.profile.full_name ?? actor.userId} REJECTED sale ${sale.receipt_number} (${sale.brand_name_snapshot} ${sale.motorcycle_name_snapshot} chasis ${sale.chasis_number}). Reason: ${parsed.data.rejectionReason ?? "(no reason provided)"}.`,
+      targetTable: "sales",
+      targetId: sale.id,
+      metadata: { sale: { receipt_number: sale.receipt_number, chasis_number: sale.chasis_number, customer: sale.customer }, rejectionReason: parsed.data.rejectionReason ?? null, paidTotal, totalAmount: sale.total_amount },
+    });
+  }
+
   revalidateERP();
-  return { status: "success", message: `Sale ${parsed.data.decision}. Stock will be deducted automatically.` };
+  return {
+    status: "success",
+    message: parsed.data.decision === "approved"
+      ? `Sale ${sale.receipt_number} approved. Stock deducted ${stockDeducted ? `(qty ${stockDeducted.before} → ${stockDeducted.after})` : ""}. Receipt auto-generated.`
+      : `Sale ${sale.receipt_number} rejected.`,
+  };
 }
 
 export async function markSaleCompleted(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {

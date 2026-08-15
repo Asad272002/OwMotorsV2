@@ -6,6 +6,27 @@ import type { AdminActionState } from "@/lib/admin/action-state";
 import { INITIAL_ADMIN_ACTION_STATE } from "@/lib/admin/action-state";
 import { SaveStatus } from "@/components/admin/admin-ui";
 
+function safeFieldCandidates(path: string): string[] {
+  if (!path) return [];
+  const clean = path.replace(/^\[/, "").replace(/\]$/, "");
+  const parts = clean.split(/[.\][\s]+/).filter(Boolean);
+  const exact = parts.join(".");
+  const snake = parts.map((s, idx) => (idx === 0 ? s : s.replace(/^[a-z]/, (c) => c.toUpperCase()))).join("");
+  const under = parts.join("_");
+  const camel = parts
+    .map((s, idx) => {
+      if (idx === 0) return s;
+      return s.replace(/^[a-z]/, (c) => c.toUpperCase());
+    })
+    .join("");
+  const candidates = [exact, snake, under, camel];
+  for (let depth = parts.length; depth >= 1; depth -= 1) {
+    candidates.push(parts.slice(-depth).join("_"));
+    candidates.push(parts.slice(-depth).map((s, i) => (i === 0 ? s : s.replace(/^[a-z]/, (c) => c.toUpperCase()))).join(""));
+  }
+  return Array.from(new Set(candidates)).filter(Boolean);
+}
+
 type Action = (state: AdminActionState, formData: FormData) => Promise<AdminActionState>;
 
 function ConfirmationDialog({
@@ -65,6 +86,7 @@ export function AdminForm({
   showStatus,
   className = "space-y-5",
   hideAutoSubmit = false,
+  formAttributes,
 }: Readonly<{
   action: Action;
   children: React.ReactNode;
@@ -75,12 +97,63 @@ export function AdminForm({
   showStatus?: boolean;
   className?: string;
   hideAutoSubmit?: boolean;
+  formAttributes?: React.FormHTMLAttributes<HTMLFormElement>;
 }>) {
   const [state, formAction, pending] = useActionState(action, INITIAL_ADMIN_ACTION_STATE);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const confirmedRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const errorsEmittedRef = useRef<AdminActionState | null>(null);
   const displayStatus = showStatus ?? (!destructive && className !== "contents");
+
+  useEffect(() => {
+    if (!state.errors || Object.keys(state.errors).length === 0) {
+      errorsEmittedRef.current = null;
+      return;
+    }
+    if (errorsEmittedRef.current && Object.is(errorsEmittedRef.current.errors, state.errors) && errorsEmittedRef.current.message === state.message) {
+      return;
+    }
+    errorsEmittedRef.current = state;
+    const errorsBag = state.errors;
+    window.dispatchEvent(new CustomEvent("admin-form:errors", { detail: { errors: errorsBag, action: action.name || String(action) } }));
+    const form = formRef.current;
+    if (!form) return;
+    const paths = Object.keys(errorsBag);
+    let firstFound: HTMLElement | null = null;
+    for (const p of paths) {
+      const candidates = safeFieldCandidates(p);
+      const allCandidates: HTMLElement[] = [];
+      for (const nm of candidates) {
+        const escaped = CSS.escape ? CSS.escape(nm) : nm;
+        const named = form.querySelectorAll<HTMLElement>(`[name="${escaped}"], [data-error-path="${escaped}"], [aria-describedby*="${escaped}"]`);
+        named.forEach((el) => allCandidates.push(el as HTMLElement));
+      }
+      for (const pNested of candidates) {
+        const prefixed = `payments.${pNested}`;
+        const escaped = CSS.escape ? CSS.escape(prefixed) : prefixed;
+        const nested = form.querySelectorAll<HTMLElement>(`[data-error-path*="${escaped}"]`);
+        nested.forEach((el) => allCandidates.push(el as HTMLElement));
+      }
+      if (allCandidates.length > 0 && !firstFound) {
+        firstFound = allCandidates[0];
+      }
+    }
+    if (!firstFound) {
+      const summaryBox = form.querySelector<HTMLElement>('div[role="alert"].border-red-200.bg-red-50');
+      if (summaryBox) firstFound = summaryBox;
+    }
+    if (firstFound) {
+      firstFound.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      setTimeout(() => {
+        if (firstFound && typeof (firstFound as HTMLInputElement).focus === "function") {
+          try {
+            (firstFound as HTMLInputElement).focus({ preventScroll: true });
+          } catch (_err) { /* noop */ }
+        }
+      }, 450);
+    }
+  }, [state.errors, state.message, action]);
 
   function confirmSubmission() {
     confirmedRef.current = true;
@@ -94,7 +167,12 @@ export function AdminForm({
         ref={formRef}
         action={formAction}
         className={className}
+        {...formAttributes}
         onSubmit={(event) => {
+          if (formAttributes?.onSubmit) {
+            formAttributes.onSubmit(event as React.FormEvent<HTMLFormElement>);
+            if (event.defaultPrevented) return;
+          }
           if (!confirmMessage) return;
           if (confirmedRef.current) {
             confirmedRef.current = false;

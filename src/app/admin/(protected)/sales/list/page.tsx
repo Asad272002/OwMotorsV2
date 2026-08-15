@@ -66,7 +66,10 @@ export default async function SalesListPage() {
                 <tr><td colSpan={7} className="px-4 py-12 text-center text-[#6B7280]">No sales yet. Record your first sale using the button above.</td></tr>
               ) : sales.map(s => {
                 const meta = statusMeta[s.sale_status] ?? statusMeta.pending_approval;
-                const paid = (s.sale_payments ?? []).reduce((t: number, p: { amount?: number }) => t + (p.amount ?? 0), 0);
+                const joined = ((s as unknown as { payments?: Array<{ amount?: number }> }).payments ?? []) as Array<{ amount?: number }>;
+                const fallback = ((s as unknown as { sale_payments?: Array<{ amount?: number }> }).sale_payments ?? []) as Array<{ amount?: number }>;
+                const rowsToSum = joined.length > 0 ? joined : fallback;
+                const paid = rowsToSum.reduce((t: number, p: { amount?: number }) => t + (Number(p.amount) || 0), 0);
                 const due = (s.total_amount ?? 0) - paid;
                 return (
                   <tr key={s.id} className="hover:bg-[#FAFAFA]">

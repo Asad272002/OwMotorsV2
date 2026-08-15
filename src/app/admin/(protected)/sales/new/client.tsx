@@ -11,6 +11,12 @@ import { initiateSale, recordSalePayment } from "@/app/admin/erp-actions";
 import { useActionState, useEffect } from "react";
 import { INITIAL_ADMIN_ACTION_STATE, type AdminActionState } from "@/lib/admin/action-state";
 
+const ERROR_INPUT_RING = "ring-2 ring-[#C62828]/70 border-[#C62828] focus:ring-[#C62828]";
+function joinMessages(msgs: readonly (string | null | undefined)[] | null | undefined): string {
+  if (!msgs) return "";
+  return msgs.filter((m) => typeof m === "string" && m.trim().length > 0).join(". ") + (msgs.some((m) => m) ? "." : "");
+}
+
 type Variant = {
   id: string;
   cc: number;
@@ -134,11 +140,37 @@ export default function NewSalePageClient(props: {
     }));
   }
 
+  const [formErrors, setFormErrors] = useState<Record<string, readonly (string | null)[]>>({});
+  useEffect(() => {
+    function onErrors(ev: Event) {
+      const custom = ev as unknown as CustomEvent<{ errors: Record<string, readonly (string | null)[]>; action: string }>;
+      setFormErrors(custom.detail.errors ?? {});
+    }
+    window.addEventListener("admin-form:errors", onErrors as EventListener);
+    return () => { window.removeEventListener("admin-form:errors", onErrors as EventListener); };
+  }, []);
+  useEffect(() => {
+    if (chasisNumber) setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev);
+  }, [chasisNumber]);
+
   const canSubmit = !!chosen && !!chasisNumber && (selectedCustomer || createNewCustomer) && payments.every(p => {
     const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
     const amt = Number(p.amount.replace(/[^0-9]/g, "")) || 0;
     return amt > 0 && (!needBank || !!p.bank_id);
   });
+  function errText(...paths: string[]): string {
+    for (const p of paths) {
+      const arr = formErrors[p];
+      if (arr && arr.length > 0) return joinMessages(arr);
+    }
+    return "";
+  }
+  function hasErr(...paths: string[]): boolean {
+    return paths.some((p) => {
+      const arr = formErrors[p];
+      return !!arr && arr.length > 0;
+    });
+  }
 
   return (
     <div className="space-y-8">
@@ -184,17 +216,19 @@ export default function NewSalePageClient(props: {
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
-              <label className={adminLabelClass}>Chasis number (required)</label>
-              <input value={chasisNumber ?? ""} onChange={e => setChasisNumber(e.target.value.toUpperCase())} required className={adminInputClass} placeholder="e.g. MP125GP-2025-894321" />
-              <p className="mt-1 text-xs text-[#6B7280]">Bike&apos;s official chassis number (printed on frame). Written onto the receipt.</p>
+              <label htmlFor="newSale-chasisNumber" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
+              <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => setChasisNumber(e.target.value.toUpperCase())} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. MP125GP-2025-894321" />
+              {hasErr("chasisNumber", "chasis_number") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</p> : <p className="mt-1 text-xs text-[#6B7280]">Bike&apos;s official chassis number (printed on frame). Must be unique across all sales — including currently pending approvals.</p>}
             </div>
             <div>
-              <label className={adminLabelClass}>Quantity</label>
-              <input type="number" min={1} max={chosen?.quantity ?? 99} value={Number.isFinite(quantity) ? quantity : 1} onChange={e => setQuantity(Math.max(1, Number(e.target.value) || 1))} className={adminInputClass} />
+              <label htmlFor="newSale-quantitySold" className={adminLabelClass}>Quantity</label>
+              <input id="newSale-quantitySold" data-error-path="quantitySold" name="quantitySold" form="main-sale-form" type="number" min={1} max={chosen?.quantity ?? 99} value={Number.isFinite(quantity) ? quantity : 1} onChange={e => setQuantity(Math.max(1, Number(e.target.value) || 1))} className={`${adminInputClass} ${hasErr("quantitySold") ? ERROR_INPUT_RING : ""}`} />
+              {hasErr("quantitySold") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("quantitySold")}</p> : null}
             </div>
             <div>
               <label className={adminLabelClass}>Sale total (auto)</label>
               <div className={`${adminInputClass} flex items-center justify-between font-display text-xl font-bold text-[#C62828]`}>{pkr(totalAmount)}<span className="text-xs font-normal text-[#6B7280]">{chosen ? `${chosen.price?.toLocaleString("en-PK")} × ${quantity}` : "Pick a bike"}</span></div>
+              {hasErr("motorcycleVariantId") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("motorcycleVariantId")}</p> : null}
             </div>
           </div>
 
@@ -245,28 +279,33 @@ export default function NewSalePageClient(props: {
             ) : (
               <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-3">
                 <div>
-                  <label className={adminLabelClass}>Full name (required)</label>
-                  <input name="customer.fullName" form="main-sale-form" required className={adminInputClass} placeholder="e.g. Muhammad Ahmed" value={newCustomer.fullName} onChange={e => setNewCustomer(prev => ({ ...prev, fullName: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_fullName" className={adminLabelClass}>Full name <span className="text-[#C62828]">*</span></label>
+                  <input id="newSale-newCustomer_fullName" data-error-path="newCustomer_fullName" name="customer.fullName" form="main-sale-form" required className={`${adminInputClass} ${hasErr("newCustomer_fullName") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. Muhammad Ahmed" value={newCustomer.fullName} onChange={e => setNewCustomer(prev => ({ ...prev, fullName: e.target.value }))} />
+                  {hasErr("newCustomer_fullName") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_fullName")}</p> : null}
                 </div>
                 <div>
-                  <label className={adminLabelClass}>CNIC (13 digits or 5-7-1)</label>
-                  <input name="customer.cnic" form="main-sale-form" required pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" className={adminInputClass} placeholder="3520212345671 or 35202-1234567-1" value={newCustomer.cnic} onChange={e => setNewCustomer(prev => ({ ...prev, cnic: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_cnic" className={adminLabelClass}>CNIC <span className="text-[#C62828]">*</span> (13 digits or 5-7-1)</label>
+                  <input id="newSale-newCustomer_cnic" data-error-path="newCustomer_cnic" name="customer.cnic" form="main-sale-form" required pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" className={`${adminInputClass} ${hasErr("newCustomer_cnic") ? ERROR_INPUT_RING : ""}`} placeholder="3520212345671 or 35202-1234567-1" value={newCustomer.cnic} onChange={e => setNewCustomer(prev => ({ ...prev, cnic: e.target.value }))} />
+                  {hasErr("newCustomer_cnic") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_cnic")}</p> : null}
                 </div>
                 <div>
-                  <label className={adminLabelClass}>Primary phone</label>
-                  <input name="customer.phonePrimary" form="main-sale-form" pattern="^\+?[0-9 -]{10,20}$" className={adminInputClass} placeholder="+92 300 1234567" value={newCustomer.phonePrimary} onChange={e => setNewCustomer(prev => ({ ...prev, phonePrimary: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_phonePrimary" className={adminLabelClass}>Primary phone</label>
+                  <input id="newSale-newCustomer_phonePrimary" data-error-path="newCustomer_phonePrimary" name="customer.phonePrimary" form="main-sale-form" pattern="^\+?[0-9 -]{10,20}$" className={`${adminInputClass} ${hasErr("newCustomer_phonePrimary") ? ERROR_INPUT_RING : ""}`} placeholder="+92 300 1234567" value={newCustomer.phonePrimary} onChange={e => setNewCustomer(prev => ({ ...prev, phonePrimary: e.target.value }))} />
+                  {hasErr("newCustomer_phonePrimary") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_phonePrimary")}</p> : null}
                 </div>
                 <div>
-                  <label className={adminLabelClass}>Secondary phone</label>
-                  <input name="customer.phoneSecondary" form="main-sale-form" className={adminInputClass} placeholder="Optional" value={newCustomer.phoneSecondary} onChange={e => setNewCustomer(prev => ({ ...prev, phoneSecondary: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_phoneSecondary" className={adminLabelClass}>Secondary phone</label>
+                  <input id="newSale-newCustomer_phoneSecondary" data-error-path="newCustomer_phoneSecondary" name="customer.phoneSecondary" form="main-sale-form" className={`${adminInputClass} ${hasErr("newCustomer_phoneSecondary") ? ERROR_INPUT_RING : ""}`} placeholder="Optional" value={newCustomer.phoneSecondary} onChange={e => setNewCustomer(prev => ({ ...prev, phoneSecondary: e.target.value }))} />
                 </div>
                 <div>
-                  <label className={adminLabelClass}>City / Town</label>
-                  <input name="customer.city" form="main-sale-form" className={adminInputClass} placeholder="e.g. Lahore" value={newCustomer.city} onChange={e => setNewCustomer(prev => ({ ...prev, city: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_city" className={adminLabelClass}>City / Town</label>
+                  <input id="newSale-newCustomer_city" data-error-path="newCustomer_city" name="customer.city" form="main-sale-form" className={`${adminInputClass} ${hasErr("newCustomer_city") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. Lahore" value={newCustomer.city} onChange={e => setNewCustomer(prev => ({ ...prev, city: e.target.value }))} />
+                  {hasErr("newCustomer_city") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_city")}</p> : null}
                 </div>
                 <div>
-                  <label className={adminLabelClass}>CNIC address</label>
-                  <input name="customer.address" form="main-sale-form" className={adminInputClass} placeholder="As per CNIC" value={newCustomer.address} onChange={e => setNewCustomer(prev => ({ ...prev, address: e.target.value }))} />
+                  <label htmlFor="newSale-newCustomer_address" className={adminLabelClass}>CNIC address</label>
+                  <input id="newSale-newCustomer_address" data-error-path="newCustomer_address" name="customer.address" form="main-sale-form" className={`${adminInputClass} ${hasErr("newCustomer_address") ? ERROR_INPUT_RING : ""}`} placeholder="As per CNIC" value={newCustomer.address} onChange={e => setNewCustomer(prev => ({ ...prev, address: e.target.value }))} />
+                  {hasErr("newCustomer_address") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("newCustomer_address")}</p> : null}
                 </div>
               </div>
             )}
@@ -293,32 +332,39 @@ export default function NewSalePageClient(props: {
         <div className="space-y-3">
           {payments.map((p, i) => {
             const pm = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"]);
+            const methodPath = `payments.${i}.paymentMethod`;
+            const bankPath = `payments.${i}.bankId`;
+            const amountPath = `payments.${i}.amount`;
+            const anyError = hasErr(methodPath, bankPath, amountPath, "payments", "paymentsJson");
             return (
-              <div key={p.id} className="grid grid-cols-1 gap-4 rounded-md border border-[#E5E7EB] p-4 md:grid-cols-[160px_220px_1fr_220px_220px_auto] md:items-end">
+              <div key={p.id} className={`grid grid-cols-1 gap-4 rounded-md border p-4 md:grid-cols-[160px_220px_1fr_220px_220px_auto] md:items-end ${anyError ? "border-[#C62828]/60 bg-[#FEF2F2]/40" : "border-[#E5E7EB]"}`}>
                 <div>
-                  <label className={adminLabelClass}>Method</label>
-                  <select value={p.payment_method ?? "cash"} onChange={e => { updatePayment(p.id, { payment_method: e.target.value, bank_id: "" }); }} className={adminInputClass} form="main-sale-form">
+                  <label htmlFor={`pay-${p.id}-method`} className={adminLabelClass}>Method</label>
+                  <select id={`pay-${p.id}-method`} data-error-path={methodPath} value={p.payment_method ?? "cash"} onChange={e => { updatePayment(p.id, { payment_method: e.target.value, bank_id: "" }); }} className={`${adminInputClass} ${hasErr(methodPath, "paymentsJson") ? ERROR_INPUT_RING : ""}`} form="main-sale-form">
                     {paymentMethods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
+                  {hasErr(methodPath) ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText(methodPath)}</p> : null}
                 </div>
                 <div>
-                  <label className={`${adminLabelClass} inline-flex items-center gap-1`}><Building2 aria-hidden="true" className="h-3.5 w-3.5 text-[#6B7280]" />{pm?.bank_required ? "Bank (required)" : "Bank (optional)"}</label>
-                  <select value={p.bank_id ?? ""} onChange={e => updatePayment(p.id, { bank_id: e.target.value })} className={adminInputClass} form="main-sale-form">
+                  <label htmlFor={`pay-${p.id}-bank`} className={`${adminLabelClass} inline-flex items-center gap-1`}><Building2 aria-hidden="true" className="h-3.5 w-3.5 text-[#6B7280]" />{pm?.bank_required ? "Bank (required)" : "Bank (optional)"}</label>
+                  <select id={`pay-${p.id}-bank`} data-error-path={bankPath} value={p.bank_id ?? ""} onChange={e => updatePayment(p.id, { bank_id: e.target.value })} className={`${adminInputClass} ${hasErr(bankPath) ? ERROR_INPUT_RING : ""}`} form="main-sale-form">
                     <option value="">-- Select --</option>
                     {banks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
+                  {hasErr(bankPath) ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText(bankPath)}</p> : null}
                 </div>
                 <div>
-                  <label className={adminLabelClass}>Amount (PKR)</label>
-                  <input type="text" inputMode="numeric" value={p.amount ?? ""} onChange={e => { const v = e.target.value.replace(/[^0-9,]/g, ""); updatePayment(p.id, { amount: v }); }} placeholder="0" className={adminInputClass + " font-display text-lg font-bold text-[#C62828]"} form="main-sale-form" />
+                  <label htmlFor={`pay-${p.id}-amount`} className={adminLabelClass}>Amount (PKR)</label>
+                  <input id={`pay-${p.id}-amount`} data-error-path={amountPath} type="text" inputMode="numeric" value={p.amount ?? ""} onChange={e => { const v = e.target.value.replace(/[^0-9,]/g, ""); updatePayment(p.id, { amount: v }); }} placeholder="0" className={`${adminInputClass} font-display text-lg font-bold text-[#C62828] ${hasErr(amountPath, "paymentsJson") ? ERROR_INPUT_RING : ""}`} form="main-sale-form" />
+                  {hasErr(amountPath) ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText(amountPath)}</p> : null}
                 </div>
                 <div>
-                  <label className={adminLabelClass}>Instrument # (Cheque / DD / PO #)</label>
-                  <input value={p.instrument_number ?? ""} onChange={e => updatePayment(p.id, { instrument_number: e.target.value })} placeholder="Optional" className={adminInputClass} form="main-sale-form" />
+                  <label htmlFor={`pay-${p.id}-instrument`} className={adminLabelClass}>Instrument # (Cheque / DD / PO #)</label>
+                  <input id={`pay-${p.id}-instrument`} value={p.instrument_number ?? ""} onChange={e => updatePayment(p.id, { instrument_number: e.target.value })} placeholder="Optional" className={adminInputClass} form="main-sale-form" />
                 </div>
                 <div>
-                  <label className={adminLabelClass}>Txn / Receipt reference</label>
-                  <input value={p.transaction_ref ?? ""} onChange={e => updatePayment(p.id, { transaction_ref: e.target.value })} placeholder="e.g. 123456789012" className={adminInputClass} form="main-sale-form" />
+                  <label htmlFor={`pay-${p.id}-txn`} className={adminLabelClass}>Txn / Receipt reference</label>
+                  <input id={`pay-${p.id}-txn`} value={p.transaction_ref ?? ""} onChange={e => updatePayment(p.id, { transaction_ref: e.target.value })} placeholder="e.g. 123456789012" className={adminInputClass} form="main-sale-form" />
                 </div>
                 <div className="flex justify-end">
                   {payments.length > 1 ? (
@@ -328,6 +374,7 @@ export default function NewSalePageClient(props: {
               </div>
             );
           })}
+          {hasErr("payments", "paymentsJson") ? <div data-error-path="paymentsJson" className="rounded-md border border-[#FECACA] bg-[#FEF2F2] p-3 text-xs font-semibold text-[#C62828]">{errText("payments", "paymentsJson")}</div> : null}
           <button type="button" onClick={addPayment} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-dashed border-[#C62828]/50 px-4 text-sm font-semibold text-[#C62828] hover:bg-[#FEF2F2]">
             <Plus aria-hidden="true" className="h-4 w-4" />Add another payment split (e.g. second bank, partial cash)
           </button>
@@ -344,6 +391,7 @@ export default function NewSalePageClient(props: {
           pendingLabel="Submitting sale…"
           confirmMessage={chosen ? `Submit sale for ${chosen.motorcycle?.brand?.name} ${chosen.motorcycle?.name} (${chosen.cc}cc ${chosen.color_name ?? "no color"}) for approval?` : "Continue"}
           className="grid grid-cols-1 gap-5 md:grid-cols-2"
+          formAttributes={{ id: "main-sale-form" }}
         >
           {/* ===== Discriminator: existing customer vs new customer ===== */}
           <input type="hidden" name="useExistingCustomer" value={createNewCustomer ? "false" : "true"} />
