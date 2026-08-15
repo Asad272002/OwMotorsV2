@@ -64,57 +64,6 @@ function numberToPKRWords(raw: number): string {
   return `${joined} Rupees Only`;
 }
 
-function GlobalPrintStyles() {
-  return (
-    <style jsx global>{`
-      @page {
-        size: A4 portrait;
-        margin: 0.35cm 0.5cm;
-      }
-      @media print {
-        html, body {
-          background: white !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
-        body * {
-          visibility: hidden;
-        }
-        body [data-receipt-root],
-        body [data-receipt-root] *,
-        body [data-receipt-root] *::before,
-        body [data-receipt-root] *::after {
-          visibility: visible !important;
-        }
-        body [data-receipt-root] {
-          position: absolute !important;
-          left: 0 !important;
-          top: 0 !important;
-          width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          background: white !important;
-          box-shadow: none !important;
-          border: 0 !important;
-          border-radius: 0 !important;
-        }
-        body header,
-        body nav,
-        body aside,
-        body .admin-shell-sidebar,
-        body .admin-shell-topbar,
-        body [role="banner"],
-        body [role="navigation"],
-        body [data-admin-breadcrumbs],
-        body [data-admin-sidebar],
-        body [data-admin-topbar] {
-          display: none !important;
-        }
-      }
-    `}</style>
-  );
-}
-
 export default async function ReceiptPrintPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const receipt = await getReceipt(params.id);
@@ -161,7 +110,6 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
 
   return (
     <div className="min-h-screen bg-gray-100 py-4 sm:py-8 print:bg-white print:py-0">
-      <GlobalPrintStyles />
       <div className="mx-auto w-full max-w-3xl px-3 sm:px-6 print:px-0">
         <ReceiptPrintActionBar receiptNumber={displayReceiptNumber} />
 

@@ -66,6 +66,8 @@ async function ensureActivityActionsEnum(sb: SupabaseClient<Database>): Promise<
 // The previous rpc("log_activity") was being silently swallowed by try/catch
 // because it required a "summary" column (not nullable) and some action values
 // weren't in the enum — that's exactly why activity logs showed 0 entries.
+type PostgrestErrorLike = { message: string; details: string; code?: string };
+
 async function writeActivity(params: {
   actorUserId: string;
   actorRole: string;
@@ -79,34 +81,43 @@ async function writeActivity(params: {
     const now = new Date().toISOString();
     const sb = serviceRoleClient();
     await ensureActivityActionsEnum(sb);
+    const safeActorId = String(params.actorUserId ?? "").trim() || "00000000-0000-0000-0000-000000000000";
+    const safeRole = String(params.actorRole ?? "").trim() || "unknown";
+    const safeAction = String(params.action || "unknown");
+    const safeSummary = String(params.summary ?? "—") || "—";
+
     const row: ActivityRowInsert = {
       id: (typeof crypto !== "undefined" && "randomUUID" in (crypto ?? {}) ? crypto.randomUUID() : undefined),
-      action: params.action as never,
-      actor_id: params.actorUserId,
-      actor_role: (params.actorRole || null) as never,
+      action: safeAction as never,
+      actor_id: safeActorId,
+      actor_role: safeRole as never,
       target_table: params.targetTable ?? null,
       target_id: params.targetId ?? null,
-      summary: params.summary,
+      summary: safeSummary,
       metadata: (params.metadata ?? null) as never,
       created_at: now,
     };
     const firstTry = await sb.from("activity_logs").insert(row);
     if (!firstTry.error) return;
-    // Enum / column validation failed — fall back to raw insert without strict
-    // TypeScript shapes, because the action value or actor_role might not be
-    // inside the Postgres enum. The db columns are the source of truth here.
+
     console.warn("activity_logs primary insert fell back (text cast mode):", firstTry.message, firstTry.details);
+    // Write BOTH actor_role AND actor_role_snapshot because the real live Supabase
+    // table in the user's DB was renamed from actor_role → actor_role_snapshot
+    // (see the pg table screenshot: column is actor_role_snapshot TEXT, not actor_role).
+    // We also set actor_id explicitly as text/string.
     const fallback: Record<string, unknown> = {
       created_at: now,
-      action: String(params.action || "unknown"),
-      actor_id: String(params.actorUserId),
-      summary: String(params.summary ?? ""),
+      action: safeAction,
+      actor_id: safeActorId,
+      actor_role: safeRole,
+      actor_role_snapshot: safeRole,
+      summary: safeSummary,
       target_table: params.targetTable ?? null,
       target_id: params.targetId ?? null,
       metadata: params.metadata ?? null,
     };
-    if (params.actorRole) fallback.actor_role = String(params.actorRole);
-    const fallbackInsert = await (sb.from("activity_logs") as unknown as { insert: (r: Record<string, unknown>) => { error: PostgrestError | null } }).insert(fallback);
+    type AnyInsert = { insert: (r: Record<string, unknown>) => { error: PostgrestErrorLike | null } };
+    const fallbackInsert = await (sb.from("activity_logs") as unknown as AnyInsert).insert(fallback);
     if (fallbackInsert.error) console.warn("[CRITICAL] activity_logs fallback insert failed:", fallbackInsert.error.message, fallbackInsert.error.details, JSON.stringify(fallback));
   } catch (e) {
     console.warn("activity_logs catch-all:", e instanceof Error ? e.message : String(e));
@@ -1012,6 +1023,19 @@ export async function markSaleCompleted(_prev: AdminActionState, formData: FormD
     .eq("id", id)
     .eq("sale_status", "approved");
   if (error) return databaseAction("markSaleCompleted", error);
+  try {
+    const sRaw = await sb.from("sales").select("id, receipt_number, motorcycle_name_snapshot, brand_name_snapshot, cc_snapshot, chasis_number, customer_id").eq("id", id).maybeSingle();
+    const s = sRaw.data as unknown as { id: string; receipt_number: string; motorcycle_name_snapshot?: string | null; brand_name_snapshot?: string | null; cc_snapshot?: number | null; chasis_number?: string | null; customer_id?: string | null } | null;
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "sale_completed",
+      summary: `${actor.profile.full_name ?? actor.userId} manually marked sale ${s?.receipt_number ?? id} as COMPLETED. Bike: ${s?.brand_name_snapshot ?? ""} ${s?.motorcycle_name_snapshot ?? ""} ${s?.cc_snapshot ?? ""}cc (chasis ${s?.chasis_number ?? "-"}).`,
+      targetTable: "sales",
+      targetId: id,
+      metadata: { saleId: id, receipt_number: s?.receipt_number ?? null, chasis: s?.chasis_number ?? null, customer_id: s?.customer_id ?? null },
+    });
+  } catch { /* noop */ }
   revalidateERP();
   return { status: "success", message: "Sale marked completed." };
 }
@@ -1029,11 +1053,17 @@ export async function generateReceipt(_prev: AdminActionState, formData: FormDat
   const sb = serviceRoleClient();
   const { data: saleRaw, error: sErr } = await sb
     .from("sales")
-    .select("sale_status, receipt_number, receipt_generated")
+    .select("id, sale_status, receipt_number, receipt_generated, total_amount, motorcycle_name_snapshot, brand_name_snapshot, cc_snapshot, chasis_number, customer_id, customer:customers(full_name, cnic)")
     .eq("id", parsed.data.saleId)
     .maybeSingle();
   if (sErr || !saleRaw) return { status: "error", message: "Sale not found." };
-  const sale = saleRaw as { sale_status: string; receipt_number: string; receipt_generated: boolean | null };
+  type SaleRowGen = {
+    id: string; sale_status: string; receipt_number: string; receipt_generated: boolean | null;
+    total_amount?: number | null; motorcycle_name_snapshot?: string | null; brand_name_snapshot?: string | null;
+    cc_snapshot?: number | null; chasis_number?: string | null; customer_id?: string | null;
+    customer?: { full_name?: string | null; cnic?: string | null } | null;
+  };
+  const sale = saleRaw as unknown as SaleRowGen;
   if (sale.sale_status !== "approved" && sale.sale_status !== "completed") return { status: "error", message: "Receipt can only be generated after admin approval." };
   if (sale.receipt_generated) return { status: "error", message: "A receipt already exists for this sale." };
 
@@ -1061,15 +1091,47 @@ export async function generateReceipt(_prev: AdminActionState, formData: FormDat
     r: receiptNumber, s: sale.receipt_number, a: actor.userId.slice(0, 8) });
 
   const sb2 = serviceRoleClient();
-  const { error } = await sb2.from("receipts").insert({
+  const receiptIns = await sb2.from("receipts").insert({
     sale_id: parsed.data.saleId,
     receipt_number: receiptNumber,
     generated_by: actor.userId,
     qr_code_payload: qr,
-  });
-  if (error) return databaseAction("generateReceipt", error);
+  }).select("id").maybeSingle();
+  if (receiptIns.error) return databaseAction("generateReceipt", receiptIns.error);
+  const receiptId = receiptIns.data?.id;
   const { error: updErr } = await sb2.from("sales").update({ receipt_generated: true, sale_status: "completed" satisfies SaleStatus }).eq("id", parsed.data.saleId);
   if (updErr) return databaseAction("mark sale completed after receipt", updErr);
+  try {
+    const bikeLabel = [sale.brand_name_snapshot, sale.motorcycle_name_snapshot, sale.cc_snapshot ? `${sale.cc_snapshot}cc` : null].filter(Boolean).join(" ");
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "receipt_generated",
+      summary: `${actor.profile.full_name ?? actor.userId} GENERATED receipt ${receiptNumber} for sale ${sale.receipt_number}. Bike: ${bikeLabel || "-"}. Chasis ${sale.chasis_number ?? "-"}. Customer: ${sale.customer?.full_name ?? sale.customer_id ?? "unknown"}. Total PKR ${(Number(sale.total_amount ?? 0)).toLocaleString("en-PK")}.`,
+      targetTable: "receipts",
+      targetId: receiptId ?? sale.id,
+      metadata: {
+        receipt: { id: receiptId ?? null, receipt_number: receiptNumber },
+        sale: {
+          id: sale.id,
+          receipt_number: sale.receipt_number,
+          chasis: sale.chasis_number ?? null,
+          customer_id: sale.customer_id ?? null,
+          customer_cnic: sale.customer?.cnic ?? null,
+          total_amount: sale.total_amount ?? null,
+        },
+      },
+    });
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "sale_completed",
+      summary: `Sale ${sale.receipt_number} moved to COMPLETED upon receipt generation. ${bikeLabel || "Bike"} chasis ${sale.chasis_number ?? "-"}. PKR ${(Number(sale.total_amount ?? 0)).toLocaleString("en-PK")} received.`,
+      targetTable: "sales",
+      targetId: sale.id,
+      metadata: { saleId: sale.id, receipt_number: sale.receipt_number, receiptId: receiptId ?? null, chasis: sale.chasis_number ?? null, total_amount: sale.total_amount ?? null },
+    });
+  } catch { /* noop */ }
   revalidateERP();
   return { status: "success", message: `Receipt ${receiptNumber} generated.`, data: { receiptNumber } };
 }
@@ -1093,5 +1155,20 @@ export async function incrementReceiptPrint(_prev: AdminActionState, formData: F
     return { status: "success", message: "Print recorded." };
   }
   if (error) return databaseAction("incrementReceiptPrint", error);
+  try {
+    const rRow = await (await import("@/lib/supabase/server")).createServerSupabaseClient()
+      .from("receipts").select("id, receipt_number, sale_id, printed_count")
+      .eq("id", parsed.data.receiptId).maybeSingle();
+    const r = rRow.data as unknown as { id: string; receipt_number: string; sale_id?: string | null; printed_count?: number | null } | null;
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "receipt_generated",
+      summary: `${actor.profile.full_name ?? actor.userId} PRINTED receipt ${r?.receipt_number ?? parsed.data.receiptId}. Count after print: ${r?.printed_count ?? 1}.`,
+      targetTable: "receipts",
+      targetId: parsed.data.receiptId,
+      metadata: { receiptId: parsed.data.receiptId, receipt_number: r?.receipt_number ?? null, sale_id: r?.sale_id ?? null, printed_count: r?.printed_count ?? null },
+    });
+  } catch { /* noop */ }
   return { status: "success", message: "Print recorded." };
 }

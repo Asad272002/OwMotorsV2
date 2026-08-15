@@ -379,3 +379,71 @@ header.sticky :is(a, button, summary):focus-visible,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==============================================
+   OW Motors — A4 Receipt Print Styles
+   ----------------------------------------------
+   The receipt page marks the printable card with
+   the data-receipt-root attribute. In print mode
+   we hide the admin chrome (sidebar / topbar /
+   breadcrumbs) entirely, position the actual
+   receipt card at the top-left of an A4 page,
+   and force A4 portrait with minimal margins.
+   ============================================== */
+@page {
+  size: A4 portrait;
+  margin: 0.35cm 0.5cm;
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #111111 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  body [data-receipt-root],
+  body [data-receipt-root] *,
+  body [data-receipt-root] *::before,
+  body [data-receipt-root] *::after {
+    visibility: visible !important;
+  }
+
+  body [data-receipt-root] {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  body header,
+  body nav,
+  body aside,
+  body footer,
+  body .admin-shell-sidebar,
+  body .admin-shell-topbar,
+  body [role="banner"],
+  body [role="navigation"],
+  body [data-admin-breadcrumbs],
+  body [data-admin-sidebar],
+  body [data-admin-topbar] {
+    display: none !important;
+  }
+}
