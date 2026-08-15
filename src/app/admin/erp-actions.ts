@@ -14,7 +14,7 @@ import {
 } from "@/lib/admin/schemas";
 import { getSupabaseConfig } from "@/lib/supabase/config";
 import type { PaymentMethod, SaleStatus, StockApprovalStatus } from "@/lib/erp/types";
-import type { Database } from "@/lib/supabase/database.types";
+import type { Database, StockStatus } from "@/lib/supabase/database.types";
 type ActivityRowInsert = Database["public"]["Tables"]["activity_logs"]["Insert"];
 
 // All activity action values ever produced by code. If the postgres enum
@@ -50,7 +50,7 @@ async function ensureActivityActionsEnum(sb: SupabaseClient<Database>): Promise<
   try {
     for (const value of ACTIVITY_ACTION_VALUES) {
       try {
-        await sb.rpc("alter_type_add_value_if_not_exists", {
+        await (sb as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown> }).rpc("alter_type_add_value_if_not_exists", {
           type_name: "ActivityAction",
           new_value: value,
         });
@@ -101,7 +101,7 @@ async function writeActivity(params: {
     const firstTry = await sb.from("activity_logs").insert(row);
     if (!firstTry.error) return;
 
-    console.warn("activity_logs primary insert fell back (text cast mode):", firstTry.message, firstTry.details);
+    console.warn("activity_logs primary insert fell back (text cast mode):", firstTry.error?.message, firstTry.error?.details);
     // Write BOTH actor_role AND actor_role_snapshot because the real live Supabase
     // table in the user's DB was renamed from actor_role → actor_role_snapshot
     // (see the pg table screenshot: column is actor_role_snapshot TEXT, not actor_role).
@@ -904,7 +904,7 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     actorUserId: actor.userId,
     actorRole: actor.profile.role,
     action: "sale_requested",
-    summary: `Manager ${actor.profile.full_name ?? actor.userId} SUBMITTED new sale ${receiptNumber} for approval. Bike: ${v.motorcycle?.brand?.name ?? variant.brand_name_snapshot ?? "Unknown"} ${v.motorcycle?.name ?? variant.motorcycle_name_snapshot ?? "Unknown"} ${variant.cc ?? ""}cc chasis ${parsed.data.chasisNumber} for customer ${customerId}. Total: PKR ${total.toLocaleString("en-PK")}. ${recordedPayments} payment split(s) attached — PKR ${totalPaidSubmitted.toLocaleString("en-PK")}.`,
+    summary: `Manager ${actor.profile.full_name ?? actor.userId} SUBMITTED new sale ${receiptNumber} for approval. Bike: ${v.motorcycle?.brand?.name ?? "Unknown"} ${v.motorcycle?.name ?? "Unknown"} ${(variant as unknown as { cc?: number | null }).cc ?? ""}cc chasis ${parsed.data.chasisNumber} for customer ${customerId}. Total: PKR ${total.toLocaleString("en-PK")}. ${recordedPayments} payment split(s) attached — PKR ${totalPaidSubmitted.toLocaleString("en-PK")}.`,
     targetTable: "sales",
     targetId: saleId,
     metadata: { outcome: "submitted", sale: { receipt_number: receiptNumber, chasis_number: parsed.data.chasisNumber, motorcycle_variant_id: parsed.data.motorcycleVariantId, customer_id: customerId }, total, totalPaid: totalPaidSubmitted, paymentsCount: recordedPayments, payments },
@@ -997,7 +997,8 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
     const qtySold = Number(sale.quantity_sold ?? 1);
     if (!beforeQty.error && beforeQty.data) {
       const newQty = Math.max(0, currentQty - qtySold);
-      const newStatus = newQty <= 0 ? "out_of_stock" : (beforeQty.data as unknown as { stock_status?: string | null }).stock_status === "out_of_stock" ? "in_stock" : (beforeQty.data as unknown as { stock_status?: string | null }).stock_status ?? "in_stock";
+      const prevStatus = ((beforeQty.data as unknown as { stock_status?: StockStatus | null }).stock_status ?? "in_stock") as StockStatus;
+      const newStatus: StockStatus = (newQty <= 0 ? "out_of_stock" : (prevStatus === "out_of_stock" ? "in_stock" : prevStatus)) as StockStatus;
       const upd = await sb.from("motorcycle_variants").update({ quantity: newQty, stock_status: newStatus }).eq("id", sale.motorcycle_variant_id);
       if (!upd.error) stockDeducted = { before: currentQty, after: newQty };
     }
@@ -1006,7 +1007,6 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
       receipt_number: sale.receipt_number,
       generated_at: now,
       generated_by: actor.userId,
-      notes: null,
     }).select("id").maybeSingle();
     if (rec.error) console.warn("receipt auto insert after sale approve failed:", rec.error);
 
@@ -1210,14 +1210,16 @@ export async function incrementReceiptPrint(_prev: AdminActionState, formData: F
   }
   if (error) return databaseAction("incrementReceiptPrint", error);
   try {
-    const rRow = await (await import("@/lib/supabase/server")).createServerSupabaseClient()
-      .from("receipts").select("id, receipt_number, sale_id, printed_count")
-      .eq("id", parsed.data.receiptId).maybeSingle();
+    const rRow = await supabase
+      .from("receipts")
+      .select("id, receipt_number, sale_id, printed_count")
+      .eq("id", parsed.data.receiptId)
+      .maybeSingle();
     const r = rRow.data as unknown as { id: string; receipt_number: string; sale_id?: string | null; printed_count?: number | null } | null;
     await writeActivity({
       actorUserId: actor.userId,
       actorRole: actor.profile.role,
-      action: "receipt_generated",
+      action: "receipt_printed",
       summary: `${actor.profile.full_name ?? actor.userId} PRINTED receipt ${r?.receipt_number ?? parsed.data.receiptId}. Count after print: ${r?.printed_count ?? 1}.`,
       targetTable: "receipts",
       targetId: parsed.data.receiptId,

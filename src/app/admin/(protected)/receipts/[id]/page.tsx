@@ -98,12 +98,13 @@ export default async function ReceiptPrintPage(props: { params: Promise<{ id: st
   const qty = Number((s as unknown as { quantity_sold?: number }).quantity_sold ?? s.quantity ?? 1);
   const totalPaid = payments.reduce((t, p) => t + (Number(p.amount) ?? 0), 0);
   const due = Math.max(0, Number(s.total_amount ?? 0) - totalPaid);
+  const receiptId = String((receipt as unknown as { id?: unknown }).id ?? "");
   const displayReceiptNumber = (
     (receipt.receipt_number && String(receipt.receipt_number).trim().length > 0)
       ? receipt.receipt_number
       : (s.receipt_number && String(s.receipt_number).trim().length > 0)
         ? s.receipt_number
-        : `OWM-RCPT-${receipt.id.slice(0, 8).toUpperCase()}`
+        : `OWM-RCPT-${receiptId.slice(0, 8).toUpperCase()}`
   );
   const saleRefNumber = s.receipt_number || displayReceiptNumber;
   const dateIso = receipt.generated_at ?? s.requested_at;

@@ -149,9 +149,6 @@ export default function NewSalePageClient(props: {
     window.addEventListener("admin-form:errors", onErrors as EventListener);
     return () => { window.removeEventListener("admin-form:errors", onErrors as EventListener); };
   }, []);
-  useEffect(() => {
-    if (chasisNumber) setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev);
-  }, [chasisNumber]);
 
   const canSubmit = !!chosen && !!chasisNumber && (selectedCustomer || createNewCustomer) && payments.every(p => {
     const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
@@ -217,7 +214,7 @@ export default function NewSalePageClient(props: {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
               <label htmlFor="newSale-chasisNumber" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
-              <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => setChasisNumber(e.target.value.toUpperCase())} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. MP125GP-2025-894321" />
+              <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => { const next = e.target.value.toUpperCase(); setChasisNumber(next); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. MP125GP-2025-894321" />
               {hasErr("chasisNumber", "chasis_number") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</p> : <p className="mt-1 text-xs text-[#6B7280]">Bike&apos;s official chassis number (printed on frame). Must be unique across all sales — including currently pending approvals.</p>}
             </div>
             <div>

@@ -170,7 +170,7 @@ export function AdminForm({
         {...formAttributes}
         onSubmit={(event) => {
           if (formAttributes?.onSubmit) {
-            formAttributes.onSubmit(event as React.FormEvent<HTMLFormElement>);
+            (formAttributes.onSubmit as unknown as (e: unknown) => void)(event);
             if (event.defaultPrevented) return;
           }
           if (!confirmMessage) return;
