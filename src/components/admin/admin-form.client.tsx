@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, TriangleAlert, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { AdminActionState } from "@/lib/admin/action-state";
 import { INITIAL_ADMIN_ACTION_STATE } from "@/lib/admin/action-state";
@@ -129,12 +130,18 @@ export function AdminForm({
   formAttributes?: React.FormHTMLAttributes<HTMLFormElement>;
 }>) {
   const [state, formAction, pending] = useActionState(action, INITIAL_ADMIN_ACTION_STATE);
+  const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const confirmedRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const errorsEmittedRef = useRef<AdminActionState | null>(null);
   const displayStatus = showStatus ?? (!destructive && className !== "contents");
   const pingedMessageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.status !== "success" || !state.message) return;
+    router.refresh();
+  }, [router, state.message, state.status]);
+
   useEffect(() => {
     if (!isSaleSuccess(state) || pingedMessageRef.current === state.message) return;
     pingedMessageRef.current = state.message;

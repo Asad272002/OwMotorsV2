@@ -17,7 +17,6 @@ const ACTIVITY_ACTION_VALUES: readonly string[] = [
   "part_receipt_generated",
   "part_sale_rejected",
   "part_sale_approved",
-  "variant_updated",
   "stock_requested",
   "stock_approved",
   "stock_rejected",

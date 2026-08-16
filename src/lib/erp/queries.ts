@@ -323,55 +323,87 @@ export const listMotorcycleVariantsForSale = cache(async (): Promise<readonly {
   return (data ?? []).filter((r: Row) => !!r.motorcycle);
 });
 
-export const listMotorcycleVariantsForStock = cache(async (): Promise<readonly {
-  id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
-  price: number; quantity: number; stock_status: string;
-  motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
-}[]> => {
+type StockVariantRow = {
+  id: string;
+  motorcycle_id: string;
+  cc: number;
+  color_name: string;
+  color_hex: string;
+  price: number;
+  quantity: number;
+  stock_status: string;
+  motorcycle: { id: string; name: string; slug: string; brand_id: string; publication_status?: string | null; brand: { id: string; name: string; slug: string } | null };
+};
+
+async function hydrateStockVariantBrands(rows: StockVariantRow[]): Promise<StockVariantRow[]> {
+  const brandIds = Array.from(new Set(rows.map((row) => row.motorcycle?.brand_id).filter(Boolean))) as string[];
+  if (brandIds.length === 0) return rows;
+  const sb = privileged();
+  if (!sb) return rows;
+  const { data } = await sb
+    .from("brands")
+    .select("id, name, slug, is_active")
+    .in("id", brandIds);
+  const brands = new Map((data ?? []).map((brand) => [brand.id, brand]));
+  return rows
+    .map((row) => {
+      const brand = row.motorcycle?.brand_id ? brands.get(row.motorcycle.brand_id) : null;
+      return {
+        ...row,
+        motorcycle: {
+          ...row.motorcycle,
+          brand: brand ? { id: brand.id, name: brand.name, slug: brand.slug } : row.motorcycle.brand,
+        },
+      };
+    })
+    .filter((row) => !!row.motorcycle && !!row.motorcycle.brand);
+}
+export const listMotorcycleVariantsForStock = cache(async (): Promise<readonly StockVariantRow[]> => {
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase
     .from("motorcycle_variants")
     .select(`
       id, motorcycle_id, cc, color_name, color_hex, price, quantity, stock_status, is_active,
-      motorcycle:motorcycles(id, name, slug, publication_status, brand:brands(id, name, slug, is_active))
+      motorcycle:motorcycles(id, name, slug, brand_id, publication_status, brand:brands(id, name, slug, is_active))
     `)
     .eq("is_active", true)
     .order("cc", { ascending: true });
-  type Row = {
-    motorcycle?: { brand?: { is_active?: boolean | null } | null } | null;
-  };
-  return ((data ?? []) as unknown as Row[])
-    .filter((r) => !!r.motorcycle && r.motorcycle.brand?.is_active !== false) as unknown as {
-      id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
-      price: number; quantity: number; stock_status: string;
-      motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
-    }[];
+  type RawRow = StockVariantRow & { motorcycle?: StockVariantRow["motorcycle"] & { brand?: (StockVariantRow["motorcycle"]["brand"] & { is_active?: boolean | null }) | null } };
+  const rows = ((data ?? []) as unknown as RawRow[])
+    .filter((row) => !!row.motorcycle && row.motorcycle.brand?.is_active !== false)
+    .map((row) => ({
+      ...row,
+      motorcycle: {
+        ...row.motorcycle,
+        brand: row.motorcycle?.brand ? { id: row.motorcycle.brand.id, name: row.motorcycle.brand.name, slug: row.motorcycle.brand.slug } : null,
+      },
+    })) as StockVariantRow[];
+  return hydrateStockVariantBrands(rows);
 });
 
 
-export const listArchivedMotorcycleVariantsForStock = cache(async (): Promise<readonly {
-  id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
-  price: number; quantity: number; stock_status: string;
-  motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
-}[]> => {
+export const listArchivedMotorcycleVariantsForStock = cache(async (): Promise<readonly StockVariantRow[]> => {
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase
     .from("motorcycle_variants")
     .select(`
       id, motorcycle_id, cc, color_name, color_hex, price, quantity, stock_status, is_active,
-      motorcycle:motorcycles(id, name, slug, publication_status, brand:brands(id, name, slug, is_active))
+      motorcycle:motorcycles(id, name, slug, brand_id, publication_status, brand:brands(id, name, slug, is_active))
     `)
     .eq("is_active", false)
     .order("cc", { ascending: true });
-  type Row = { motorcycle?: { brand?: { is_active?: boolean | null } | null } | null };
-  return ((data ?? []) as unknown as Row[])
-    .filter((r) => !!r.motorcycle && r.motorcycle.brand?.is_active !== false) as unknown as {
-      id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
-      price: number; quantity: number; stock_status: string;
-      motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
-    }[];
+  type RawRow = StockVariantRow & { motorcycle?: StockVariantRow["motorcycle"] & { brand?: (StockVariantRow["motorcycle"]["brand"] & { is_active?: boolean | null }) | null } };
+  const rows = ((data ?? []) as unknown as RawRow[])
+    .filter((row) => !!row.motorcycle && row.motorcycle.brand?.is_active !== false)
+    .map((row) => ({
+      ...row,
+      motorcycle: {
+        ...row.motorcycle,
+        brand: row.motorcycle?.brand ? { id: row.motorcycle.brand.id, name: row.motorcycle.brand.name, slug: row.motorcycle.brand.slug } : null,
+      },
+    })) as StockVariantRow[];
+  return hydrateStockVariantBrands(rows);
 });
-
 export async function getStockMotorcycleVariant(variantId: string): Promise<{
   id: string;
   motorcycle_id: string;

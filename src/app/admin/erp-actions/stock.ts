@@ -8,6 +8,12 @@ import { revalidateERP, serviceRoleClient, writeActivity } from "@/lib/admin/erp
 import type { Database } from "@/lib/supabase/database.types";
 
 
+function formatBikeStockLabel(brandName: string, modelName: string, cc?: number | string | null, colorName?: string | null): string {
+  const model = String(modelName ?? "").trim();
+  const brand = String(brandName ?? "").trim();
+  const modelWithBrand = brand && model.toLowerCase().startsWith(brand.toLowerCase()) ? model : `${brand} ${model}`.trim();
+  return `${modelWithBrand} ${cc ?? ""}cc ${colorName ?? ""}`.replace(/\s+/g, " ").trim();
+}
 function slugifyStockName(value: string): string {
   const slug = value
     .toLowerCase()
@@ -170,14 +176,40 @@ export async function updateSimpleBikeStock(_prev: AdminActionState, formData: F
   const variantRes = await sb.from("motorcycle_variants").update(variantUpdate).eq("id", parsed.data.variantId);
   if (variantRes.error) return databaseAction("updateSimpleBikeStock variant", variantRes.error);
 
-  const oldLabel = `${row.motorcycle?.brand?.name ?? "Bike"} ${row.motorcycle?.name ?? "variant"} ${row.cc ?? ""}cc ${row.color_name ?? ""}`.replace(/\s+/g, " ").trim();
-  const newLabel = `${brand.name} ${modelName} ${parsed.data.cc}cc ${parsed.data.colorName}`.replace(/\s+/g, " ").trim();
+  const verify = await sb
+    .from("motorcycle_variants")
+    .select("id, cc, color_name, color_hex, price, quantity, motorcycle:motorcycles(id, brand_id, name)")
+    .eq("id", parsed.data.variantId)
+    .maybeSingle();
+  if (verify.error || !verify.data) return databaseAction("updateSimpleBikeStock verify", verify.error ?? new Error("Bike update could not be verified."));
+  const verified = verify.data as unknown as {
+    cc?: number | null;
+    color_name?: string | null;
+    color_hex?: string | null;
+    price?: number | null;
+    quantity?: number | null;
+    motorcycle?: { brand_id?: string | null; name?: string | null } | null;
+  };
+  const verifiedOk =
+    verified.motorcycle?.brand_id === parsed.data.brandId &&
+    verified.motorcycle?.name === modelName &&
+    Number(verified.cc) === parsed.data.cc &&
+    String(verified.color_name ?? "") === parsed.data.colorName.trim() &&
+    String(verified.color_hex ?? "").toUpperCase() === parsed.data.colorHex.toUpperCase() &&
+    Number(verified.price) === parsed.data.price &&
+    Number(verified.quantity) === qty;
+  if (!verifiedOk) {
+    return { status: "error", message: "Bike details were submitted, but the saved database row did not match. Please refresh and try again." };
+  }
+
+  const oldLabel = formatBikeStockLabel(row.motorcycle?.brand?.name ?? "Bike", row.motorcycle?.name ?? "variant", row.cc, row.color_name);
+  const newLabel = formatBikeStockLabel(brand.name, modelName, parsed.data.cc, parsed.data.colorName);
 
   try {
     await writeActivity({
       actorUserId: actor.userId,
       actorRole: actor.profile.role,
-      action: "variant_updated",
+      action: "stock_applied",
       summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} updated bike stock details from ${oldLabel} to ${newLabel}.`,
       targetTable: "motorcycle_variants",
       targetId: parsed.data.variantId,
@@ -803,7 +835,7 @@ export async function updateVariantDetails(_prev: AdminActionState, formData: Fo
     await writeActivity({
       actorUserId: actor.userId,
       actorRole: actor.profile.role,
-      action: "variant_updated",
+      action: "stock_applied",
       summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} updated variant pricing/stock for variant #${parsed.data.variantId.slice(0, 8)} price PKR ${row.price ?? 0} -> PKR ${payload.price ?? 0}; qty ${row.quantity ?? 0} -> ${typeof payload.quantity === "number" ? payload.quantity : "(unchanged)"}.`,
       targetTable: "motorcycle_variants",
       targetId: parsed.data.variantId,
@@ -856,7 +888,7 @@ export async function archiveMotorcycleVariant(_prev: AdminActionState, formData
     await writeActivity({
       actorUserId: actor.userId,
       actorRole: actor.profile.role,
-      action: "variant_updated",
+      action: "stock_applied",
       summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} ${restore ? "restored" : "archived"} ${bikeLabel}.`,
       targetTable: "motorcycle_variants",
       targetId: parsed.data.variantId,
