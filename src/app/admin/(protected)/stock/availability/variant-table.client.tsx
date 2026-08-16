@@ -154,9 +154,8 @@ export function VariantAdminEditorTable({
                         <label className={adminLabelClass}>Price, PKR</label>
                         <input name="price" required type="number" min={0} step={1} defaultValue={priceValue} className={adminInputClass} />
                       </div>
-                      <div>
-                        <label className={adminLabelClass}>Quantity</label>
-                        <input name="quantity" required type="number" min={0} step={1} defaultValue={quantityValue} className={adminInputClass} />
+                      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-[#92400E] md:col-span-2">
+                        <span className="font-bold">Quantity locked:</span> use Stock Changes for additions/subtractions so Admin approval and audit logs stay linked.
                       </div>
                       <div className="flex items-end justify-end gap-2 md:col-span-2">
                         <button type="button" onClick={() => setEditingId(null)} className="inline-flex min-h-11 items-center justify-center rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">Cancel</button>

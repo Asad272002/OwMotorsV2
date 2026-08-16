@@ -98,26 +98,28 @@ export const simpleBikeStockSchema = z.object({
   quantity: z.coerce.number().int().min(0).max(100000),
 });
 
-export const simpleBikeStockEditSchema = simpleBikeStockSchema.extend({
+
+export const simpleBikeVariantStockSchema = z.object({
+  motorcycleId: uuid,
+  cc: z.coerce.number().int().min(25).max(2500),
+  colorName: z.string().trim().min(2, "Enter the color.").max(80),
+  colorHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, "Use a valid HEX color."),
+  price: money,
+  quantity: z.coerce.number().int().min(0).max(100000),
+});
+export const simpleBikeStockEditSchema = z.object({
   variantId: uuid,
-});export const variantArchiveSchema = z.object({
-  variantId: uuid,
-  mode: z.enum(["archive", "restore"]),
+  brandId: uuid,
+  modelName: z.string().trim().min(2, "Enter the bike model name.").max(140),
+  cc: z.coerce.number().int().min(25).max(2500),
+  colorName: z.string().trim().min(2, "Enter the color.").max(80),
+  colorHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, "Use a valid HEX color."),
+  price: money,
 });
 
-export const variantQuickUpdateSchema = z.object({
+export const variantArchiveSchema = z.object({
   variantId: uuid,
-  price: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return 0;
-    const n = Number(String(val).replace(/[^0-9.]/g, "") || "0");
-    return Number.isFinite(n) && n >= 0 ? n : 0;
-  }, z.coerce.number().min(0).max(200_000_000)),
-  quantity: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return undefined;
-    const n = Number(String(val).replace(/[^0-9]/g, "") || "0");
-    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
-  }, z.coerce.number().int().min(0).optional()),
-  stockStatus: z.enum(["in_stock", "low_stock", "out_of_stock", "coming_soon", "discontinued"]).optional(),
+  mode: z.enum(["archive", "restore"]),
 });
 
 export const imageMetadataSchema = z.object({

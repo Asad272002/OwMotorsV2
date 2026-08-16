@@ -3,7 +3,7 @@
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { databaseAction, unauthorizedAction, validationAction } from "@/lib/admin/action-helpers";
 import type { AdminActionState } from "@/lib/admin/action-state";
-import { partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockEditSchema, simpleBikeStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantArchiveSchema, variantQuickUpdateSchema } from "@/lib/admin/schemas";
+import { partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockEditSchema, simpleBikeStockSchema, simpleBikeVariantStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantArchiveSchema } from "@/lib/admin/schemas";
 import { revalidateERP, serviceRoleClient, writeActivity } from "@/lib/admin/erp-action-runtime";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -36,6 +36,34 @@ function generatePartSaleNumber(): string {
   return `OWM-PART-${yy}${mm}${dd}${hh}${mi}${ss}${ms}${tail}`;
 }
 
+async function syncMotorcycleBasePrice(sb: ReturnType<typeof serviceRoleClient>, motorcycleId: string): Promise<Error | null> {
+  const prices = await sb
+    .from("motorcycle_variants")
+    .select("price")
+    .eq("motorcycle_id", motorcycleId)
+    .eq("is_active", true)
+    .order("price", { ascending: true })
+    .limit(1);
+  if (prices.error) return prices.error;
+  const price = Number(prices.data?.[0]?.price ?? 0);
+  const update = await sb.from("motorcycles").update({ base_price: price }).eq("id", motorcycleId);
+  return update.error ?? null;
+}
+
+async function activeVariantExists(sb: ReturnType<typeof serviceRoleClient>, motorcycleId: string, cc: number, colorName: string, excludeVariantId?: string): Promise<boolean | Error> {
+  let query = sb
+    .from("motorcycle_variants")
+    .select("id")
+    .eq("motorcycle_id", motorcycleId)
+    .eq("cc", cc)
+    .ilike("color_name", colorName)
+    .eq("is_active", true)
+    .limit(1);
+  if (excludeVariantId) query = query.neq("id", excludeVariantId);
+  const result = await query;
+  if (result.error) return result.error;
+  return (result.data?.length ?? 0) > 0;
+}
 // ==============================================
 // SIMPLE BIKE STOCK ENTRY (MANAGER+)
 // ==============================================
@@ -123,6 +151,72 @@ export async function createSimpleBikeStock(_prev: AdminActionState, formData: F
 }
 
 
+
+export async function createBikeStockVariant(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = simpleBikeVariantStockSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  const motorcycleRes = await sb
+    .from("motorcycles")
+    .select("id, name, brand_id, brand:brands(id, name, is_active)")
+    .eq("id", parsed.data.motorcycleId)
+    .maybeSingle();
+  if (motorcycleRes.error || !motorcycleRes.data) return { status: "error", message: "Select a valid existing bike model." };
+  const motorcycle = motorcycleRes.data as unknown as { id: string; name: string; brand_id: string; brand?: { id?: string; name?: string; is_active?: boolean | null } | null };
+  if (motorcycle.brand?.is_active === false) return { status: "error", message: "This bike brand is inactive. Activate the brand before adding variants." };
+
+  const colorName = parsed.data.colorName.trim();
+  const duplicate = await activeVariantExists(sb, parsed.data.motorcycleId, parsed.data.cc, colorName);
+  if (duplicate instanceof Error) return databaseAction("createBikeStockVariant duplicate", duplicate);
+  if (duplicate) return { status: "error", message: `${motorcycle.brand?.name ?? "Bike"} ${motorcycle.name} already has an active ${parsed.data.cc}cc ${colorName} variant.` };
+
+  const qty = Math.max(0, parsed.data.quantity);
+  const variantInsert: Database["public"]["Tables"]["motorcycle_variants"]["Insert"] = {
+    motorcycle_id: parsed.data.motorcycleId,
+    cc: parsed.data.cc,
+    color_name: colorName,
+    color_hex: parsed.data.colorHex.toUpperCase(),
+    price: parsed.data.price,
+    quantity: qty,
+    stock_status: qty > 0 ? "in_stock" : "out_of_stock",
+    is_default: false,
+    is_active: true,
+  };
+  const variantRes = await sb.from("motorcycle_variants").insert(variantInsert).select("id").maybeSingle();
+  if (variantRes.error || !variantRes.data) return databaseAction("createBikeStockVariant", variantRes.error ?? new Error("Bike variant was not created."));
+  const syncError = await syncMotorcycleBasePrice(sb, parsed.data.motorcycleId);
+  if (syncError) return databaseAction("createBikeStockVariant base price", syncError);
+
+  try {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "stock_applied",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} added ${parsed.data.cc}cc ${colorName} variant to ${motorcycle.brand?.name ?? "Bike"} ${motorcycle.name} with ${qty} unit(s).`,
+      targetTable: "motorcycle_variants",
+      targetId: (variantRes.data as { id: string }).id,
+      metadata: {
+        event: "bike_stock_variant_created",
+        brand_id: motorcycle.brand_id,
+        brand_name: motorcycle.brand?.name ?? null,
+        motorcycle_id: parsed.data.motorcycleId,
+        model_name: motorcycle.name,
+        cc: parsed.data.cc,
+        color_name: colorName,
+        color_hex: parsed.data.colorHex.toUpperCase(),
+        price: parsed.data.price,
+        quantity: qty,
+      },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: `${motorcycle.brand?.name ?? "Bike"} ${motorcycle.name} ${parsed.data.cc}cc ${colorName} added.` };
+}
 export async function updateSimpleBikeStock(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const actor = await getAuthenticatedProfile();
   if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
@@ -131,15 +225,18 @@ export async function updateSimpleBikeStock(_prev: AdminActionState, formData: F
   if (!parsed.success) return validationAction(parsed.error);
 
   const sb = serviceRoleClient();
-  const current = await sb
-    .from("motorcycle_variants")
-    .select("id, motorcycle_id, cc, color_name, color_hex, price, quantity, motorcycle:motorcycles(id, name, brand_id, brand:brands(name))")
-    .eq("id", parsed.data.variantId)
-    .maybeSingle();
-  if (current.error || !current.data) return { status: "error", message: "Bike stock record not found." };
+  const [current, brandRes] = await Promise.all([
+    sb
+      .from("motorcycle_variants")
+      .select("id, motorcycle_id, cc, color_name, color_hex, price, quantity, motorcycle:motorcycles(id, name, brand_id, brand:brands(name))")
+      .eq("id", parsed.data.variantId)
+      .maybeSingle(),
+    sb.from("brands").select("id, name, is_active").eq("id", parsed.data.brandId).maybeSingle(),
+  ]);
 
-  const brandRes = await sb.from("brands").select("id, name, is_active").eq("id", parsed.data.brandId).maybeSingle();
+  if (current.error || !current.data) return { status: "error", message: "Bike stock record not found." };
   if (brandRes.error || !brandRes.data) return { status: "error", message: "Select a valid existing brand." };
+
   const brand = brandRes.data as { id: string; name: string; is_active?: boolean | null };
   if (brand.is_active === false) return { status: "error", message: "This brand is inactive. Activate the brand before assigning bikes to it." };
 
@@ -153,32 +250,35 @@ export async function updateSimpleBikeStock(_prev: AdminActionState, formData: F
     quantity?: number | null;
     motorcycle?: { id?: string | null; name?: string | null; brand_id?: string | null; brand?: { name?: string | null } | null } | null;
   };
-
-  const qty = Math.max(0, parsed.data.quantity);
   const modelName = parsed.data.modelName.trim();
+  const colorName = parsed.data.colorName.trim();
+  const colorHex = parsed.data.colorHex.toUpperCase();
   const motorcycleUpdate: Database["public"]["Tables"]["motorcycles"]["Update"] = {
     brand_id: parsed.data.brandId,
     name: modelName,
-    base_price: parsed.data.price,
   };
+  const duplicate = await activeVariantExists(sb, row.motorcycle_id, parsed.data.cc, colorName, parsed.data.variantId);
+  if (duplicate instanceof Error) return databaseAction("updateSimpleBikeStock duplicate", duplicate);
+  if (duplicate) return { status: "error", message: `${brand.name} ${modelName} already has another active ${parsed.data.cc}cc ${colorName} variant.` };
   const variantUpdate: Database["public"]["Tables"]["motorcycle_variants"]["Update"] = {
     cc: parsed.data.cc,
-    color_name: parsed.data.colorName.trim(),
-    color_hex: parsed.data.colorHex.toUpperCase(),
+    color_name: colorName,
+    color_hex: colorHex,
     price: parsed.data.price,
-    quantity: qty,
-    stock_status: qty > 0 ? "in_stock" : "out_of_stock",
   };
 
-  const bikeRes = await sb.from("motorcycles").update(motorcycleUpdate).eq("id", row.motorcycle_id);
+  const [bikeRes, variantRes] = await Promise.all([
+    sb.from("motorcycles").update(motorcycleUpdate).eq("id", row.motorcycle_id),
+    sb.from("motorcycle_variants").update(variantUpdate).eq("id", parsed.data.variantId),
+  ]);
   if (bikeRes.error) return databaseAction("updateSimpleBikeStock motorcycle", bikeRes.error);
-
-  const variantRes = await sb.from("motorcycle_variants").update(variantUpdate).eq("id", parsed.data.variantId);
   if (variantRes.error) return databaseAction("updateSimpleBikeStock variant", variantRes.error);
+  const basePriceSyncError = await syncMotorcycleBasePrice(sb, row.motorcycle_id);
+  if (basePriceSyncError) return databaseAction("updateSimpleBikeStock base price", basePriceSyncError);
 
   const verify = await sb
     .from("motorcycle_variants")
-    .select("id, cc, color_name, color_hex, price, quantity, motorcycle:motorcycles(id, brand_id, name)")
+    .select("id, cc, color_name, color_hex, price, motorcycle:motorcycles(id, brand_id, name)")
     .eq("id", parsed.data.variantId)
     .maybeSingle();
   if (verify.error || !verify.data) return databaseAction("updateSimpleBikeStock verify", verify.error ?? new Error("Bike update could not be verified."));
@@ -187,23 +287,21 @@ export async function updateSimpleBikeStock(_prev: AdminActionState, formData: F
     color_name?: string | null;
     color_hex?: string | null;
     price?: number | null;
-    quantity?: number | null;
     motorcycle?: { brand_id?: string | null; name?: string | null } | null;
   };
   const verifiedOk =
     verified.motorcycle?.brand_id === parsed.data.brandId &&
     verified.motorcycle?.name === modelName &&
     Number(verified.cc) === parsed.data.cc &&
-    String(verified.color_name ?? "") === parsed.data.colorName.trim() &&
-    String(verified.color_hex ?? "").toUpperCase() === parsed.data.colorHex.toUpperCase() &&
-    Number(verified.price) === parsed.data.price &&
-    Number(verified.quantity) === qty;
+    String(verified.color_name ?? "") === colorName &&
+    String(verified.color_hex ?? "").toUpperCase() === colorHex &&
+    Number(verified.price) === parsed.data.price;
   if (!verifiedOk) {
     return { status: "error", message: "Bike details were submitted, but the saved database row did not match. Please refresh and try again." };
   }
 
   const oldLabel = formatBikeStockLabel(row.motorcycle?.brand?.name ?? "Bike", row.motorcycle?.name ?? "variant", row.cc, row.color_name);
-  const newLabel = formatBikeStockLabel(brand.name, modelName, parsed.data.cc, parsed.data.colorName);
+  const newLabel = formatBikeStockLabel(brand.name, modelName, parsed.data.cc, colorName);
 
   try {
     await writeActivity({
@@ -228,10 +326,9 @@ export async function updateSimpleBikeStock(_prev: AdminActionState, formData: F
           brand_id: parsed.data.brandId,
           model_name: modelName,
           cc: parsed.data.cc,
-          color_name: parsed.data.colorName,
-          color_hex: parsed.data.colorHex.toUpperCase(),
+          color_name: colorName,
+          color_hex: colorHex,
           price: parsed.data.price,
-          quantity: qty,
         },
       },
     });
@@ -788,70 +885,6 @@ export async function generatePartSaleReceipt(_prev: AdminActionState, formData:
   revalidateERP();
   return { status: "success", message: "Part receipt generated. You can print it now." };
 }
-// ==============================================
-// VARIANT PRICE / STOCK QUICK ADMIN UPDATE
-// Admin + Developer only. Manager/Apprentice blocked.
-// Used by Stock Availability dashboard inline row editor.
-// ==============================================
-export async function updateVariantDetails(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
-  const actor = await getAuthenticatedProfile();
-  if (!actor || !["admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
-
-  const raw = Object.fromEntries(formData);
-  const input: Record<string, unknown> = {
-    variantId: String(raw.variantId ?? "").trim(),
-    price: String(raw.price ?? "").trim() || 0,
-    quantity: String(raw.quantity ?? "").trim() || undefined,
-    stockStatus: String(raw.stockStatus ?? "").trim() || undefined,
-  };
-
-  const parsed = variantQuickUpdateSchema.safeParse(input);
-  if (!parsed.success) return validationAction(parsed.error);
-
-  const sbService = serviceRoleClient();
-  const existCheck = await sbService
-    .from("motorcycle_variants")
-    .select("id, price, quantity, stock_status")
-    .eq("id", parsed.data.variantId)
-    .maybeSingle();
-  if (existCheck.error || !existCheck.data) return { status: "error", message: "Variant not found." };
-  const row = existCheck.data as unknown as { id: string; price: number; quantity: number; stock_status: string };
-
-  const payload: Database["public"]["Tables"]["motorcycle_variants"]["Update"] = {
-    price: parsed.data.price,
-  };
-  if (typeof parsed.data.quantity === "number") payload.quantity = Math.max(0, parsed.data.quantity);
-  if (parsed.data.stockStatus) payload.stock_status = parsed.data.stockStatus as "in_stock" | "out_of_stock" | "coming_soon" | "discontinued";
-
-  if (typeof parsed.data.quantity === "number" && !payload.stock_status) {
-    const qty = Number(payload.quantity);
-    payload.stock_status = qty <= 0 ? "out_of_stock" : "in_stock";
-  }
-
-  const { error } = await sbService.from("motorcycle_variants").update(payload).eq("id", parsed.data.variantId);
-  if (error) return databaseAction("updateVariantDetails", error);
-
-  try {
-    await writeActivity({
-      actorUserId: actor.userId,
-      actorRole: actor.profile.role,
-      action: "stock_applied",
-      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} updated variant pricing/stock for variant #${parsed.data.variantId.slice(0, 8)} price PKR ${row.price ?? 0} -> PKR ${payload.price ?? 0}; qty ${row.quantity ?? 0} -> ${typeof payload.quantity === "number" ? payload.quantity : "(unchanged)"}.`,
-      targetTable: "motorcycle_variants",
-      targetId: parsed.data.variantId,
-      metadata: {
-        old_price: row.price,
-        new_price: payload.price,
-        old_quantity: row.quantity,
-        new_quantity: payload.quantity,
-      },
-    });
-  } catch { /* noop */ }
-
-  revalidateERP();
-  return { status: "success", message: "Variant details updated." };
-}
-
 export async function archiveMotorcycleVariant(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const actor = await getAuthenticatedProfile();
   if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;

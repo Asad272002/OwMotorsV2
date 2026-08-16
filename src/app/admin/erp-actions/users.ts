@@ -7,6 +7,20 @@ import { revokeUserSchema, staffUserSchema, staffUserUpdateSchema } from "@/lib/
 import { revalidateERP, serviceRoleClient, writeActivity } from "@/lib/admin/erp-action-runtime";
 import type { Database } from "@/lib/supabase/database.types";
 
+async function getManagedProfileOrError(sb: ReturnType<typeof serviceRoleClient>, targetId: string, actorRole: string): Promise<{ profile?: { id: string; full_name: string | null; role: string }; error?: AdminActionState }> {
+  const { data, error } = await sb
+    .from("profiles")
+    .select("id, full_name, role")
+    .eq("id", targetId)
+    .maybeSingle();
+  if (error) return { error: databaseAction("readStaffProfile", error) };
+  if (!data) return { error: { status: "error", message: "User account not found." } };
+  const profile = data as { id: string; full_name: string | null; role: string };
+  if (profile.role === "developer" && actorRole !== "developer") {
+    return { error: { status: "error", message: "Developer access is protected. Admins cannot view, edit, reset, or revoke the developer login." } };
+  }
+  return { profile };
+}
 // USER MANAGEMENT (ADMIN+)
 // ==============================================
 
@@ -76,6 +90,8 @@ export async function updateStaffUser(_prev: AdminActionState, formData: FormDat
 
   try {
     const sb = serviceRoleClient();
+    const target = await getManagedProfileOrError(sb, parsed.data.id, actor.profile.role);
+    if (target.error) return target.error;
     const updates: Record<string, unknown> = {};
     if (parsed.data.fullName) updates.full_name = parsed.data.fullName;
     if (parsed.data.role) updates.role = parsed.data.role;
@@ -108,6 +124,8 @@ export async function revokeStaffAccess(_prev: AdminActionState, formData: FormD
   if (parsed.data.id === actor.userId) return { status: "error", message: "You cannot revoke your own access." };
 
   const sb = serviceRoleClient();
+  const target = await getManagedProfileOrError(sb, parsed.data.id, actor.profile.role);
+  if (target.error) return target.error;
   const revokeUpdate = {
     is_active: false,
     revoked_at: new Date().toISOString(),

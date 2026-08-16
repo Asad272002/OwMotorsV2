@@ -5,37 +5,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseConfig } from "@/lib/supabase/config";
 import type { Database } from "@/lib/supabase/database.types";
 
-const ACTIVITY_ACTION_VALUES: readonly string[] = [
-  "login_success",
-  "login_failure",
-  "user_created",
-  "user_updated",
-  "user_revoked",
-  "part_created",
-  "part_updated",
-  "part_sale_created",
-  "part_receipt_generated",
-  "part_sale_rejected",
-  "part_sale_approved",
-  "stock_requested",
-  "stock_approved",
-  "stock_rejected",
-  "stock_applied",
-  "sale_requested",
-  "sale_approved",
-  "sale_rejected",
-  "sale_completed",
-  "sale_cancelled",
-  "payment_recorded",
-  "receipt_generated",
-  "receipt_printed",
-  "inventory_adjusted",
-];
-
 type PostgrestErrorLike = { message: string; details: string; code?: string };
 export type ServiceRoleClient = SupabaseClient<Database>;
-
-let actionEnumEnsured = false;
 
 export function serviceRoleClient(): ServiceRoleClient {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -60,26 +31,6 @@ export function revalidateERP(): void {
   revalidatePath("/admin/activity");
 }
 
-async function ensureActivityActionsEnum(sb: SupabaseClient<Database>): Promise<void> {
-  if (actionEnumEnsured) return;
-  actionEnumEnsured = true;
-
-  try {
-    for (const value of ACTIVITY_ACTION_VALUES) {
-      try {
-        await (sb as unknown as { rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown> }).rpc("alter_type_add_value_if_not_exists", {
-          type_name: "ActivityAction",
-          new_value: value,
-        });
-      } catch {
-        // Some environments do not expose this helper RPC. The insert below is still best-effort.
-      }
-    }
-  } catch {
-    // Best effort only; activity writes should never block the ERP action itself.
-  }
-}
-
 export async function writeActivity(params: {
   actorUserId: string;
   actorRole: string;
@@ -92,8 +43,6 @@ export async function writeActivity(params: {
   try {
     const now = new Date().toISOString();
     const sb = serviceRoleClient();
-    await ensureActivityActionsEnum(sb);
-
     const safeActorId = String(params.actorUserId ?? "").trim() || "00000000-0000-0000-0000-000000000000";
     const safeRole = String(params.actorRole ?? "").trim() || "unknown";
     const safeAction = String(params.action || "unknown");

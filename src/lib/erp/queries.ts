@@ -61,13 +61,16 @@ export async function listStaffProfiles(): Promise<readonly StaffProfile[]> {
 
   const sb = privileged();
   if (!sb) return [];
-  const { data } = await sb
+  let query = sb
     .from("profiles")
     .select("*")
     .order("created_at", { ascending: false });
+  if (actor.profile.role !== "developer") {
+    query = query.neq("role", "developer");
+  }
+  const { data } = await query;
   return (data as StaffProfile[]) ?? [];
 }
-
 export async function getStaffProfile(id: string): Promise<StaffProfile | null> {
   const supabase = await createServerSupabaseClient();
   const { data } = await supabase
@@ -106,6 +109,27 @@ export const listStockBrands = cache(async (): Promise<readonly { id: string; na
   return (data as { id: string; name: string; slug: string; is_active: boolean }[]) ?? [];
 });
 
+
+export const listStockMotorcycleModels = cache(async (): Promise<readonly { id: string; name: string; slug: string; brand: { id: string; name: string; slug: string }; variant_count: number }[]> => {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return [];
+  const sb = privileged();
+  if (!sb) return [];
+  const { data } = await sb
+    .from("motorcycles")
+    .select("id, name, slug, brand:brands(id, name, slug, is_active), variants:motorcycle_variants(id, is_active)")
+    .order("name", { ascending: true });
+  type Row = { id: string; name: string; slug: string; brand?: { id: string; name: string; slug: string; is_active?: boolean | null } | null; variants?: { id: string; is_active?: boolean | null }[] | null };
+  return ((data ?? []) as unknown as Row[])
+    .filter((row) => !!row.brand && row.brand.is_active !== false)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      brand: { id: row.brand!.id, name: row.brand!.name, slug: row.brand!.slug },
+      variant_count: (row.variants ?? []).filter((variant) => variant.is_active !== false).length,
+    }));
+});
 // ==============================================
 // PARTS INVENTORY
 // ==============================================
