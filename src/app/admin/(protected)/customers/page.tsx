@@ -1,15 +1,15 @@
+import { redirect } from "next/navigation";
 import CustomersPageClient from "./client";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { Database } from "@/lib/supabase/database.types";
-
+import { createSubmissionSupabaseClient } from "@/lib/supabase/submission-client";
 export const metadata = { title: "Customers" };
 
 export default async function CustomersPage() {
   const actor = await getAuthenticatedProfile();
-  const role = actor?.profile.role ?? "apprentice";
+  if (!actor || !actor.profile.is_active) redirect("/admin/login");
+  const role = actor.profile.role ?? "apprentice";
   const canEdit = role === "developer" || role === "admin" || role === "manager";
-  const supabase = await createServerSupabaseClient();
+  const supabase = createSubmissionSupabaseClient();
   const { data } = await supabase
     .from("customers")
     .select(`

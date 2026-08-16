@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Archive, RotateCcw, Pencil, X, Save } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Archive, RotateCcw, Pencil, X, Save, Search } from "lucide-react";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { adminInputClass, adminLabelClass, StatusBadge } from "@/components/admin/admin-ui";
 import { archiveMotorcycleVariant, updateSimpleBikeStock } from "@/app/admin/erp-actions/stock";
@@ -37,6 +37,19 @@ export function VariantAdminEditorTable({
   brands?: BrandOptionClient[];
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const filteredVariants = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return variants;
+    const numeric = needle.replace(/[^0-9]/g, "");
+    return variants.filter((v) => {
+      const brand = v.motorcycle?.brand?.name ?? "";
+      const model = v.motorcycle?.name ?? "";
+      const color = v.color_name ?? "";
+      const haystack = `${brand} ${model} ${v.cc} ${color} ${v.stock_status ?? ""}`.toLowerCase();
+      return haystack.includes(needle) || (!!numeric && String(v.cc).includes(numeric));
+    });
+  }, [query, variants]);
 
   const hasActions = canArchive;
   const baseCols = 5;
@@ -44,7 +57,12 @@ export function VariantAdminEditorTable({
   const colSpan = baseCols + (isApprentice ? 0 : colsNoApprentice) + (hasActions ? 1 : 0);
 
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-4">
+      <div className="relative max-w-xl">
+        <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} className={`${adminInputClass} pl-10`} placeholder="Search bikes by brand, model, color, or CC" />
+      </div>
+      <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-[#E5E7EB] text-left text-sm">
         <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
           <tr>
@@ -59,9 +77,9 @@ export function VariantAdminEditorTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-[#E5E7EB]">
-          {variants.length === 0 ? (
-            <tr><td colSpan={colSpan} className="px-4 py-8 text-center text-[#6B7280]">No bike variants here.</td></tr>
-          ) : variants.flatMap((v) => {
+          {filteredVariants.length === 0 ? (
+            <tr><td colSpan={colSpan} className="px-4 py-8 text-center text-[#6B7280]">{query ? "No bike variants match that search." : "No bike variants here."}</td></tr>
+          ) : filteredVariants.flatMap((v) => {
             const inStock = (v.quantity ?? 0) > 0 && v.stock_status !== "out_of_stock";
             const editing = editingId === v.id;
             const priceValue = Number(v.price) || 0;
@@ -173,6 +191,7 @@ export function VariantAdminEditorTable({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

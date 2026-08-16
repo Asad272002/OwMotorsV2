@@ -151,11 +151,14 @@ export const listParts = cache(async (): Promise<readonly Part[]> => {
 });
 
 export const listPartsForApprentice = cache(async (): Promise<readonly (Omit<Part, "current_stock" | "reorder_level" | "unit_cost"> & { in_stock: boolean })[]> => {
-  const supabase = await createServerSupabaseClient();
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager", "apprentice"].includes(actor.profile.role) || !actor.profile.is_active) return [];
+  const supabase = privileged();
+  if (!supabase) return [];
   const { data } = await supabase
     .from("parts")
     .select("id, sku, name, description, category, unit, location, is_active, current_stock")
-    .eq("is_active", true)
+    .or("is_active.eq.true,current_stock.gt.0")
     .order("name");
   return (data ?? []).map((p: Record<string, unknown>) => ({
     id: p.id, sku: p.sku, name: p.name, description: p.description,
@@ -163,7 +166,6 @@ export const listPartsForApprentice = cache(async (): Promise<readonly (Omit<Par
     in_stock: Number(p.current_stock ?? 0) > 0
   }));
 });
-
 
 export const listPendingPartSales = cache(async (): Promise<readonly PartSale[]> => {
   const all = await listPartSales();

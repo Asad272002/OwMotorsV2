@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Bike, AlertTriangle } from "lucide-react";
-import { AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/admin-ui";
+import { AdminPageHeader, AdminPanel } from "@/components/admin/admin-ui";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { listArchivedMotorcycleVariantsForStock, listMotorcycleVariantsForStock, listParts, listPartsForApprentice, listStockBrands } from "@/lib/erp/queries";
 import { VariantAdminEditorTable, type BrandOptionClient, type VariantRowClient } from "./variant-table.client";
+import { PartsAvailabilityTable, type PartAvailabilityRow } from "./parts-availability-table.client";
 
 export const metadata = { title: "Stock Availability" };
 
@@ -17,20 +18,7 @@ export default async function StockAvailabilityPage() {
   const canArchiveBikes = canManageCatalog && !isApprentice;
 
   type VariantRow = Awaited<ReturnType<typeof listMotorcycleVariantsForStock>>[number] & { quantity?: number | null };
-  type PartRow = {
-    id: string;
-    sku: string;
-    name: string;
-    description?: string | null;
-    category?: string | null;
-    unit?: string | null;
-    location?: string | null;
-    is_active?: boolean;
-    current_stock?: number | null;
-    reorder_level?: number | null;
-    unit_cost?: number | null;
-    in_stock?: boolean;
-  };
+  type PartRow = PartAvailabilityRow;
 
   const [variants, archivedVariants, brands, partsRaw] = await Promise.all([
     listMotorcycleVariantsForStock() as unknown as Promise<VariantRow[]>,
@@ -103,43 +91,8 @@ export default async function StockAvailabilityPage() {
         </AdminPanel>
       ) : null}
 
-      <AdminPanel title="Spare parts availability" description={isApprentice ? "Apprentice view: only in/out of stock shown, no costs or reorder points." : "All spare parts. Low stock highlighted."}>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-[#E5E7EB] text-left text-sm">
-            <thead className="bg-[#F7F7F8] text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]">
-              <tr>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">Part name</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Status</th>
-                {!isApprentice ? <th className="px-4 py-3 text-right">Qty</th> : null}
-                {!isApprentice ? <th className="px-4 py-3 text-right">Reorder at</th> : null}
-                {!isApprentice ? <th className="px-4 py-3 text-right">Unit cost</th> : null}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E5E7EB]">
-              {parts.length === 0 ? (
-                <tr><td colSpan={isApprentice ? 4 : 7} className="px-4 py-8 text-center text-[#6B7280]">No spare parts registered. Managers can add parts under Stock Spare Parts.</td></tr>
-              ) : parts.map(p => {
-                const stock = p.current_stock ?? 0;
-                const inStock = isApprentice ? p.in_stock : stock > 0;
-                return (
-                  <tr key={p.id} className="hover:bg-[#FAFAFA]">
-                    <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
-                    <td className="px-4 py-3 font-semibold">{p.name}</td>
-                    <td className="px-4 py-3 text-xs text-[#6B7280]">{p.category ?? "-"}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge value={inStock ? "in_stock" : "out_of_stock"} label={inStock ? "In stock" : "Out of stock"} />
-                    </td>
-                    {!isApprentice ? <td className={`px-4 py-3 text-right font-display text-lg font-bold ${stock <= (p.reorder_level ?? 0) ? "text-[#C62828]" : ""}`}>{stock}</td> : null}
-                    {!isApprentice ? <td className="px-4 py-3 text-right">{p.reorder_level ?? "-"}</td> : null}
-                    {!isApprentice ? <td className="px-4 py-3 text-right">PKR {(p.unit_cost ?? 0).toLocaleString("en-PK")}</td> : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      <AdminPanel title="Spare parts availability" description={isApprentice ? "Apprentice view: search parts by SKU, name, category, or availability." : "All spare parts. Search by SKU, name, category, or stock status."}>
+        <PartsAvailabilityTable parts={parts} isApprentice={isApprentice} />
       </AdminPanel>
     </div>
   );
