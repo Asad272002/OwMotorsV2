@@ -60,7 +60,7 @@ export default async function PartSaleReceiptPage(props: { params: Promise<{ id:
       <div className="mx-auto w-full max-w-3xl px-3 sm:px-6 print:px-0">
         <ReceiptPrintActionBar receiptNumber={sale.sale_number} />
 
-        <section className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none" style={{ fontFamily: "Rajdhani, Inter, system-ui, sans-serif" }}>
+        <section data-receipt-root className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none" style={{ fontFamily: "Rajdhani, Inter, system-ui, sans-serif" }}>
           <header className="border-b-4 border-[#C62828] bg-white px-7 py-5 print:px-5 print:py-4">
             <div className="flex items-start justify-between gap-5">
               <div className="flex min-w-0 items-start gap-4">

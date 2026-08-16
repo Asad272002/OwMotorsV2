@@ -97,6 +97,14 @@ export const simpleBikeStockSchema = z.object({
   price: money,
   quantity: z.coerce.number().int().min(0).max(100000),
 });
+
+export const simpleBikeStockEditSchema = simpleBikeStockSchema.extend({
+  variantId: uuid,
+});export const variantArchiveSchema = z.object({
+  variantId: uuid,
+  mode: z.enum(["archive", "restore"]),
+});
+
 export const variantQuickUpdateSchema = z.object({
   variantId: uuid,
   price: z.preprocess((val) => {

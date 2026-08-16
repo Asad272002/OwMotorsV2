@@ -304,22 +304,43 @@ function UserMenu({ name, role }: Readonly<{ name: string; role: string }>) {
 
   return (
     <div ref={containerRef} className="relative" onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
-      <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="menu" className="flex min-h-11 items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-[#F7F7F8] sm:px-2">
-        <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[#111111] text-xs font-bold text-white"><span>{initials}</span><span className="admin-role-badge absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-[#C62828]" /></span>
-        <span className="hidden max-w-40 sm:block"><strong className="block truncate text-xs text-[#111111]">{name}</strong><span className="mt-1 inline-flex items-center rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#C62828]">{roleLabel}</span></span>
-        <ChevronDown aria-hidden="true" className={`hidden h-4 w-4 text-[#6B7280] transition-transform sm:block ${open ? "rotate-180" : ""}`} />
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex h-12 items-center gap-3 rounded-full border border-[#E5E7EB] bg-white px-2.5 pr-3 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:border-[#C62828]/40 hover:bg-[#FAFAFA]"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#111111] text-xs font-bold text-white ring-2 ring-[#F3F4F6]">{initials}</span>
+        <span className="hidden min-w-0 sm:block">
+          <span className="flex min-w-0 items-center gap-2">
+            <strong className="max-w-36 truncate text-xs font-bold leading-none text-[#111111]">{name}</strong>
+            <span className="admin-role-badge inline-flex shrink-0 items-center rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-[#C62828]">{roleLabel}</span>
+          </span>
+          <span className="mt-1 block text-[10px] font-medium text-[#6B7280]">Signed in</span>
+        </span>
+        <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 text-[#6B7280] transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
-        <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-md border border-[#E5E7EB] bg-white p-2 shadow-xl">
-          <div className="border-b border-[#E5E7EB] px-3 py-3"><p className="truncate text-sm font-semibold text-[#111111]">{name}</p><span className="admin-role-badge mt-2 inline-flex rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#C62828]">{roleLabel} access</span></div>
-          <Link href="/" target="_blank" rel="noreferrer" className="mt-2 flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#374151] hover:bg-[#F7F7F8]" role="menuitem"><ExternalLink aria-hidden="true" className="h-4 w-4" />View website</Link>
-          <form action={logoutAdmin}><button type="submit" role="menuitem" className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-semibold text-[#C62828] hover:bg-[#FEF2F2]"><CircleUserRound aria-hidden="true" className="h-4 w-4" />Sign out</button></form>
+        <div role="menu" className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-72 overflow-hidden rounded-lg border border-[#E5E7EB] bg-white shadow-2xl">
+          <div className="bg-[#FAFAFA] px-4 py-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#111111] text-xs font-bold text-white">{initials}</span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-[#111111]">{name}</p>
+                <span className="admin-role-badge mt-1 inline-flex rounded-full border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#C62828]">{roleLabel} access</span>
+              </div>
+            </div>
+          </div>
+          <div className="p-2">
+            <Link href="/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-[#374151] hover:bg-[#F7F7F8]" role="menuitem"><ExternalLink aria-hidden="true" className="h-4 w-4" />View website</Link>
+            <form action={logoutAdmin}><button type="submit" role="menuitem" className="flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-semibold text-[#C62828] hover:bg-[#FEF2F2]"><CircleUserRound aria-hidden="true" className="h-4 w-4" />Sign out</button></form>
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
-
 export function AdminShell({ children, actorName, actorRole }: Readonly<{ children: React.ReactNode; actorName: string; actorRole: string }>) {
   const pathname = usePathname();
   const mobileCloseRef = useRef<HTMLButtonElement>(null);
@@ -378,12 +399,12 @@ export function AdminShell({ children, actorName, actorRole }: Readonly<{ childr
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-40 flex h-[72px] items-center gap-3 border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+        <header className="sticky top-0 z-40 flex h-[72px] items-center gap-4 border-b border-[#E5E7EB] bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <button type="button" onClick={() => setMobileOpen(true)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border border-[#E5E7EB] text-[#111111] hover:border-[#C62828] hover:bg-[#FEF2F2] hover:text-[#C62828] lg:hidden" aria-label="Open admin navigation"><Menu aria-hidden="true" className="h-5 w-5" /></button>
-          <button type="button" onClick={() => setSearchOpen(true)} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md border border-[#E5E7EB] bg-[#F7F7F8] px-3 text-left text-sm text-[#6B7280] transition-colors hover:border-[#C62828] hover:bg-white sm:max-w-xl" aria-label="Search admin dashboard">
-            <Search aria-hidden="true" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">Search sales, stock, customers</span><span className="ml-auto hidden items-center gap-1 rounded border border-[#D1D5DB] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#6B7280] sm:inline-flex"><Command aria-hidden="true" className="h-3 w-3" />K</span>
+          <button type="button" onClick={() => setSearchOpen(true)} className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F7F7F8] px-4 text-left text-sm text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.03)] transition-colors hover:border-[#C62828]/50 hover:bg-white sm:max-w-2xl" aria-label="Search admin dashboard">
+            <Search aria-hidden="true" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">Search sales, stock, customers</span><span className="ml-auto hidden items-center gap-1 rounded-md border border-[#D1D5DB] bg-white px-2 py-1 text-[10px] font-bold text-[#6B7280] sm:inline-flex"><Command aria-hidden="true" className="h-3 w-3" />K</span>
           </button>
-          <Link href="/admin#attention" className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#6B7280] transition-colors hover:bg-[#FEF2F2] hover:text-[#C62828]" aria-label="Review dashboard attention summary"><Bell aria-hidden="true" className="h-5 w-5" /><span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full border-2 border-white bg-[#D97706]" /><span className="sr-only">Attention summary</span></Link>
+          <Link href="/admin#attention" className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:border-[#C62828]/40 hover:bg-[#FEF2F2] hover:text-[#C62828]" aria-label="Review dashboard attention summary"><Bell aria-hidden="true" className="h-5 w-5" /><span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#D97706]" /><span className="sr-only">Attention summary</span></Link>
           <UserMenu name={actorName} role={actorRole} />
         </header>
         <div className="border-b border-[#E5E7EB] bg-white px-4 py-3 sm:px-6 lg:px-8"><Breadcrumbs pathname={pathname} /></div>

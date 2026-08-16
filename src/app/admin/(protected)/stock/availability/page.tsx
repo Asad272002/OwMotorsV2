@@ -1,9 +1,9 @@
 import Link from "next/link";
+import { Bike, AlertTriangle } from "lucide-react";
 import { AdminPageHeader, AdminPanel, StatusBadge } from "@/components/admin/admin-ui";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { listMotorcycleVariantsForStock, listParts, listPartsForApprentice } from "@/lib/erp/queries";
-import { VariantAdminEditorTable, type VariantRowClient } from "./variant-table.client";
-import { Bike, AlertTriangle } from "lucide-react";
+import { listArchivedMotorcycleVariantsForStock, listMotorcycleVariantsForStock, listParts, listPartsForApprentice, listStockBrands } from "@/lib/erp/queries";
+import { VariantAdminEditorTable, type BrandOptionClient, type VariantRowClient } from "./variant-table.client";
 
 export const metadata = { title: "Stock Availability" };
 
@@ -14,16 +14,28 @@ export default async function StockAvailabilityPage() {
   const canEditPrices = role === "admin" || role === "developer";
   const canRequestStock = role === "manager" || role === "admin" || role === "developer";
   const canManageCatalog = role === "developer" || role === "admin" || role === "manager";
+  const canArchiveBikes = canManageCatalog && !isApprentice;
 
   type VariantRow = Awaited<ReturnType<typeof listMotorcycleVariantsForStock>>[number] & { quantity?: number | null };
   type PartRow = {
-    id: string; sku: string; name: string; description?: string | null; category?: string | null;
-    unit?: string | null; location?: string | null; is_active?: boolean;
-    current_stock?: number | null; reorder_level?: number | null; unit_cost?: number | null;
+    id: string;
+    sku: string;
+    name: string;
+    description?: string | null;
+    category?: string | null;
+    unit?: string | null;
+    location?: string | null;
+    is_active?: boolean;
+    current_stock?: number | null;
+    reorder_level?: number | null;
+    unit_cost?: number | null;
     in_stock?: boolean;
   };
-  const [variants, partsRaw] = await Promise.all([
+
+  const [variants, archivedVariants, brands, partsRaw] = await Promise.all([
     listMotorcycleVariantsForStock() as unknown as Promise<VariantRow[]>,
+    isApprentice ? Promise.resolve([] as VariantRow[]) : listArchivedMotorcycleVariantsForStock() as unknown as Promise<VariantRow[]>,
+    isApprentice ? Promise.resolve([] as BrandOptionClient[]) : listStockBrands() as unknown as Promise<BrandOptionClient[]>,
     (isApprentice ? listPartsForApprentice() : listParts()) as Promise<PartRow[]>,
   ]);
   const parts: PartRow[] = partsRaw;
@@ -67,14 +79,29 @@ export default async function StockAvailabilityPage() {
         title="Bikes by brand, CC & color"
         description={
           canEditPrices
-            ? "Admin quick editor: click “Edit details” on any row to change price, stock quantity, or reorder alert level directly for all bikes of that variant. New sale screens and catalog instantly reflect updated pricing after save."
+            ? "Admin quick editor: update pricing here, or archive a bike variant when it should no longer appear in sales or stock workflows."
             : isApprentice
               ? "Apprentice view: only stock status shown. See Managers for exact quantities and pricing."
-              : "Managers can read stock levels and prices, but cannot alter pricing. To update variant details ask an Admin / Developer, or go to Stock → Additions flow."
+              : "Managers can read stock levels and archive inactive bike variants. Pricing changes require Admin / Developer access."
         }
       >
-        <VariantAdminEditorTable variants={variants as unknown as VariantRowClient[]} canEditPrices={canEditPrices} isApprentice={isApprentice} />
+        <VariantAdminEditorTable variants={variants as unknown as VariantRowClient[]} isApprentice={isApprentice} canArchive={canArchiveBikes} brands={brands} />
       </AdminPanel>
+
+      {!isApprentice ? (
+        <AdminPanel
+          title="Archived bikes"
+          description="Hidden from stock availability and new-sale selection. Restore when this bike should be available again."
+        >
+          <VariantAdminEditorTable
+            variants={archivedVariants as unknown as VariantRowClient[]}
+            isApprentice={false}
+            archived
+            canArchive={canArchiveBikes}
+            brands={brands}
+          />
+        </AdminPanel>
+      ) : null}
 
       <AdminPanel title="Spare parts availability" description={isApprentice ? "Apprentice view: only in/out of stock shown, no costs or reorder points." : "All spare parts. Low stock highlighted."}>
         <div className="overflow-x-auto">
@@ -92,7 +119,7 @@ export default async function StockAvailabilityPage() {
             </thead>
             <tbody className="divide-y divide-[#E5E7EB]">
               {parts.length === 0 ? (
-                <tr><td colSpan={isApprentice ? 4 : 7} className="px-4 py-8 text-center text-[#6B7280]">No spare parts registered. Managers can add parts under Stock → Spare Parts.</td></tr>
+                <tr><td colSpan={isApprentice ? 4 : 7} className="px-4 py-8 text-center text-[#6B7280]">No spare parts registered. Managers can add parts under Stock Spare Parts.</td></tr>
               ) : parts.map(p => {
                 const stock = p.current_stock ?? 0;
                 const inStock = isApprentice ? p.in_stock : stock > 0;
@@ -100,7 +127,7 @@ export default async function StockAvailabilityPage() {
                   <tr key={p.id} className="hover:bg-[#FAFAFA]">
                     <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
                     <td className="px-4 py-3 font-semibold">{p.name}</td>
-                    <td className="px-4 py-3 text-xs text-[#6B7280]">{p.category ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-[#6B7280]">{p.category ?? "-"}</td>
                     <td className="px-4 py-3">
                       <StatusBadge value={inStock ? "in_stock" : "out_of_stock"} label={inStock ? "In stock" : "Out of stock"} />
                     </td>

@@ -3,7 +3,7 @@
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { databaseAction, unauthorizedAction, validationAction } from "@/lib/admin/action-helpers";
 import type { AdminActionState } from "@/lib/admin/action-state";
-import { partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantQuickUpdateSchema } from "@/lib/admin/schemas";
+import { partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockEditSchema, simpleBikeStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantArchiveSchema, variantQuickUpdateSchema } from "@/lib/admin/schemas";
 import { revalidateERP, serviceRoleClient, writeActivity } from "@/lib/admin/erp-action-runtime";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -116,6 +116,98 @@ export async function createSimpleBikeStock(_prev: AdminActionState, formData: F
   return { status: "success", message: `${brand.name} ${modelName} added to stock with ${qty} unit(s).` };
 }
 
+
+export async function updateSimpleBikeStock(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = simpleBikeStockEditSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  const current = await sb
+    .from("motorcycle_variants")
+    .select("id, motorcycle_id, cc, color_name, color_hex, price, quantity, motorcycle:motorcycles(id, name, brand_id, brand:brands(name))")
+    .eq("id", parsed.data.variantId)
+    .maybeSingle();
+  if (current.error || !current.data) return { status: "error", message: "Bike stock record not found." };
+
+  const brandRes = await sb.from("brands").select("id, name, is_active").eq("id", parsed.data.brandId).maybeSingle();
+  if (brandRes.error || !brandRes.data) return { status: "error", message: "Select a valid existing brand." };
+  const brand = brandRes.data as { id: string; name: string; is_active?: boolean | null };
+  if (brand.is_active === false) return { status: "error", message: "This brand is inactive. Activate the brand before assigning bikes to it." };
+
+  const row = current.data as unknown as {
+    id: string;
+    motorcycle_id: string;
+    cc?: number | null;
+    color_name?: string | null;
+    color_hex?: string | null;
+    price?: number | null;
+    quantity?: number | null;
+    motorcycle?: { id?: string | null; name?: string | null; brand_id?: string | null; brand?: { name?: string | null } | null } | null;
+  };
+
+  const qty = Math.max(0, parsed.data.quantity);
+  const modelName = parsed.data.modelName.trim();
+  const motorcycleUpdate: Database["public"]["Tables"]["motorcycles"]["Update"] = {
+    brand_id: parsed.data.brandId,
+    name: modelName,
+    base_price: parsed.data.price,
+  };
+  const variantUpdate: Database["public"]["Tables"]["motorcycle_variants"]["Update"] = {
+    cc: parsed.data.cc,
+    color_name: parsed.data.colorName.trim(),
+    color_hex: parsed.data.colorHex.toUpperCase(),
+    price: parsed.data.price,
+    quantity: qty,
+    stock_status: qty > 0 ? "in_stock" : "out_of_stock",
+  };
+
+  const bikeRes = await sb.from("motorcycles").update(motorcycleUpdate).eq("id", row.motorcycle_id);
+  if (bikeRes.error) return databaseAction("updateSimpleBikeStock motorcycle", bikeRes.error);
+
+  const variantRes = await sb.from("motorcycle_variants").update(variantUpdate).eq("id", parsed.data.variantId);
+  if (variantRes.error) return databaseAction("updateSimpleBikeStock variant", variantRes.error);
+
+  const oldLabel = `${row.motorcycle?.brand?.name ?? "Bike"} ${row.motorcycle?.name ?? "variant"} ${row.cc ?? ""}cc ${row.color_name ?? ""}`.replace(/\s+/g, " ").trim();
+  const newLabel = `${brand.name} ${modelName} ${parsed.data.cc}cc ${parsed.data.colorName}`.replace(/\s+/g, " ").trim();
+
+  try {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "variant_updated",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} updated bike stock details from ${oldLabel} to ${newLabel}.`,
+      targetTable: "motorcycle_variants",
+      targetId: parsed.data.variantId,
+      metadata: {
+        event: "bike_stock_details_updated",
+        old: {
+          brand_id: row.motorcycle?.brand_id,
+          model_name: row.motorcycle?.name,
+          cc: row.cc,
+          color_name: row.color_name,
+          color_hex: row.color_hex,
+          price: row.price,
+          quantity: row.quantity,
+        },
+        new: {
+          brand_id: parsed.data.brandId,
+          model_name: modelName,
+          cc: parsed.data.cc,
+          color_name: parsed.data.colorName,
+          color_hex: parsed.data.colorHex.toUpperCase(),
+          price: parsed.data.price,
+          quantity: qty,
+        },
+      },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: `${newLabel} updated.` };
+}
 // PARTS INVENTORY (MANAGER+)
 // ==============================================
 
@@ -728,5 +820,56 @@ export async function updateVariantDetails(_prev: AdminActionState, formData: Fo
   return { status: "success", message: "Variant details updated." };
 }
 
+export async function archiveMotorcycleVariant(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = variantArchiveSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sbService = serviceRoleClient();
+  const current = await sbService
+    .from("motorcycle_variants")
+    .select("id, is_active, cc, color_name, quantity, motorcycle:motorcycles(name, brand:brands(name))")
+    .eq("id", parsed.data.variantId)
+    .maybeSingle();
+
+  if (current.error || !current.data) return { status: "error", message: "Bike variant not found." };
+
+  const restore = parsed.data.mode === "restore";
+  const { error } = await sbService
+    .from("motorcycle_variants")
+    .update({ is_active: restore })
+    .eq("id", parsed.data.variantId);
+
+  if (error) return databaseAction("archiveMotorcycleVariant", error);
+
+  const row = current.data as unknown as {
+    cc?: number | null;
+    color_name?: string | null;
+    quantity?: number | null;
+    motorcycle?: { name?: string | null; brand?: { name?: string | null } | null } | null;
+  };
+  const bikeLabel = `${row.motorcycle?.brand?.name ?? "Bike"} ${row.motorcycle?.name ?? "variant"} ${row.cc ?? ""}cc ${row.color_name ?? ""}`.replace(/\s+/g, " ").trim();
+
+  try {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "variant_updated",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} ${restore ? "restored" : "archived"} ${bikeLabel}.`,
+      targetTable: "motorcycle_variants",
+      targetId: parsed.data.variantId,
+      metadata: {
+        event: restore ? "bike_stock_restored" : "bike_stock_archived",
+        bike: bikeLabel,
+        quantity: row.quantity ?? 0,
+      },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: restore ? "Bike restored to stock workflows." : "Bike archived and hidden from stock workflows." };
+}
 // ==============================================
 

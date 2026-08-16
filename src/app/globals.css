@@ -433,6 +433,7 @@ header.sticky :is(a, button, summary):focus-visible,
   }
 
   body [data-receipt-root] {
+    display: block !important;
     position: static !important;
     width: 100% !important;
     max-width: 18.6cm !important;

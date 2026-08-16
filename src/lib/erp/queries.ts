@@ -322,7 +322,67 @@ export const listMotorcycleVariantsForStock = cache(async (): Promise<readonly {
     }[];
 });
 
-export async function getMotorcycleVariantForApprentice(): Promise<readonly {
+
+export const listArchivedMotorcycleVariantsForStock = cache(async (): Promise<readonly {
+  id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
+  price: number; quantity: number; stock_status: string;
+  motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
+}[]> => {
+  const supabase = await createServerSupabaseClient();
+  const { data } = await supabase
+    .from("motorcycle_variants")
+    .select(`
+      id, motorcycle_id, cc, color_name, color_hex, price, quantity, stock_status, is_active,
+      motorcycle:motorcycles(id, name, slug, publication_status, brand:brands(id, name, slug, is_active))
+    `)
+    .eq("is_active", false)
+    .order("cc", { ascending: true });
+  type Row = { motorcycle?: { brand?: { is_active?: boolean | null } | null } | null };
+  return ((data ?? []) as unknown as Row[])
+    .filter((r) => !!r.motorcycle && r.motorcycle.brand?.is_active !== false) as unknown as {
+      id: string; motorcycle_id: string; cc: number; color_name: string; color_hex: string;
+      price: number; quantity: number; stock_status: string;
+      motorcycle: { id: string; name: string; slug: string; publication_status?: string; brand: { id: string; name: string; slug: string } };
+    }[];
+});
+
+export async function getStockMotorcycleVariant(variantId: string): Promise<{
+  id: string;
+  motorcycle_id: string;
+  cc: number;
+  color_name: string;
+  color_hex: string;
+  price: number;
+  quantity: number;
+  stock_status: string;
+  is_active: boolean;
+  motorcycle: { id: string; name: string; slug: string; brand_id: string; publication_status?: string | null; brand: { id: string; name: string; slug: string } };
+} | null> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return null;
+  const sb = privileged();
+  if (!sb) return null;
+  const { data } = await sb
+    .from("motorcycle_variants")
+    .select(`
+      id, motorcycle_id, cc, color_name, color_hex, price, quantity, stock_status, is_active,
+      motorcycle:motorcycles(id, name, slug, brand_id, publication_status, brand:brands(id, name, slug))
+    `)
+    .eq("id", variantId)
+    .maybeSingle();
+  return (data as unknown as {
+    id: string;
+    motorcycle_id: string;
+    cc: number;
+    color_name: string;
+    color_hex: string;
+    price: number;
+    quantity: number;
+    stock_status: string;
+    is_active: boolean;
+    motorcycle: { id: string; name: string; slug: string; brand_id: string; publication_status?: string | null; brand: { id: string; name: string; slug: string } };
+  } | null) ?? null;
+}export async function getMotorcycleVariantForApprentice(): Promise<readonly {
   id: string; cc: number; color_name: string; color_hex: string;
   in_stock: boolean;
   motorcycle: { name: string; brand: { name: string } };
