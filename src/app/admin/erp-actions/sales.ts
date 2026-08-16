@@ -109,6 +109,32 @@ export async function createOrUpdateCustomer(_prev: AdminActionState, formData: 
 // Admin approves sale (triggers stock deduction + receipt generation unlock).
 // ==============================================
 
+export async function checkChasisAvailability(chasisNumber: string): Promise<{ ok: boolean; status: "idle" | "available" | "duplicate" | "error"; message: string }> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) {
+    return { ok: false, status: "error", message: "Not allowed." };
+  }
+  const chasisNorm = String(chasisNumber ?? "").trim().toUpperCase();
+  if (chasisNorm.length < 3) return { ok: false, status: "idle", message: "Enter chasis number." };
+  const sb = serviceRoleClient();
+  const { data, error } = await sb.from("sales").select("id,sale_status,receipt_number").ilike("chasis_number", chasisNorm).limit(1);
+  if (error) return { ok: false, status: "error", message: "Could not check chasis right now." };
+  const found = data?.[0] as { sale_status?: string | null; receipt_number?: string | null } | undefined;
+  if (!found) return { ok: true, status: "available", message: "Chasis is unique." };
+  const label: Record<string, string> = {
+    pending_approval: "pending approval",
+    approved: "approved",
+    completed: "completed",
+    rejected: "rejected earlier",
+    cancelled: "cancelled",
+  };
+  const status = String(found.sale_status ?? "existing").toLowerCase();
+  return {
+    ok: false,
+    status: "duplicate",
+    message: `Already used${found.receipt_number ? ` in ${found.receipt_number}` : ""}. Status: ${label[status] ?? status}.`,
+  };
+}
 export async function initiateSale(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const actor = await getAuthenticatedProfile();
   if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
@@ -193,6 +219,17 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   const variantPrice = Number((variant as unknown as { price?: unknown }).price ?? 0) || 0;
   const unitPrice = variantPrice > 0 ? variantPrice : (parsed.data.unitPrice || 0);
   const qty = parsed.data.quantitySold || 1;
+  const availableQty = Number((variant as unknown as { quantity?: unknown }).quantity ?? 0) || 0;
+  if (qty <= 0) {
+    return { status: "error", message: "Sale quantity is invalid.", errors: { quantitySold: ["Quantity must be at least 1."] } };
+  }
+  if (availableQty < qty) {
+    return {
+      status: "error",
+      message: availableQty <= 0 ? "This bike is out of stock." : `Only ${availableQty} unit(s) are available for this bike.`,
+      errors: { motorcycleVariantId: [availableQty <= 0 ? "Pick a bike that is in stock." : `Reduce quantity to ${availableQty} or add stock first.`] },
+    };
+  }
   const discount = parsed.data.discountAmount || 0;
   const total = Math.max(0, unitPrice * qty - discount);
 

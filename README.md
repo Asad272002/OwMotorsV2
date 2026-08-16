@@ -16,8 +16,20 @@ OW Motors is a Next.js App Router project for a multi-brand motorcycle dealershi
 
 - Public website: homepage, brands, categories, motorcycle catalog, motorcycle detail pages, blog, about, contact.
 - Admin catalog: brands, categories, motorcycles, variants, media, homepage/storefront content.
-- Admin ERP: customers, new sales, sale approvals, sale list, receipts, stock availability, stock movements, spare parts, users/access, settings, activity logs.
+- Admin ERP: customers, bike sales, part sales, approvals, receipts, stock availability, stock movements, spare parts, users/access, settings, activity logs.
 - Audit trail: activity logs record who performed each important ERP action, the target record, and useful context such as bike, chasis, customer, payment, approval, stock, and receipt details.
+
+## ERP Workflow Highlights
+
+- Sell Bike uses a guided checked workflow: bike/customer, payment, then approval submission.
+- Bike sales require live chasis uniqueness checks before Step 1 can complete.
+- Bike sales cannot proceed if selected stock is zero or requested quantity is above available stock.
+- Sale creation creates a pending record only after customer, chasis, stock, and payment checks pass.
+- Admin approval performs the final stock deduction and unlocks receipt generation.
+- Sell Spare Parts supports cart-style part selection, existing/new customer linking, payment method/bank reference, approval, stock deduction, and receipt generation.
+- All Sales shows bike and spare-part sales in one searchable register with type and status filters.
+- Customers can be searched by CNIC, phone, chasis, sale number, bike sale history, or spare-part SKU/name.
+- Stock Availability separates bike and spare-part availability into searchable modern tabs.
 
 ## Project Structure
 
@@ -66,27 +78,33 @@ http://localhost:3000
 http://localhost:3000/admin
 ```
 
-## Admin Workflow Notes
+## Database Migrations
 
-Sales use a controlled approval flow:
+Supabase migrations live in `supabase/migrations`. Apply them in timestamp order for a fresh project.
 
-1. Manager/admin creates a pending sale with bike, customer, chasis number, and payment split.
-2. Admin approves or rejects the sale.
-3. Approval validates payment and stock, deducts inventory, and unlocks receipt generation.
-4. Receipt generation moves the sale to completed.
-5. Activity logs capture all successful sale, payment, approval, rejection, completion, receipt, print, stock, and user events.
+Recent ERP migrations that must exist in the database:
 
-Chasis numbers are treated as globally unique across sales, including pending, approved, completed, rejected, and cancelled records.
+```text
+20260809030000_erp_role_system_and_sales_inventory.sql
+20260816010000_add_part_compatibility.sql
+20260816020000_add_part_sales.sql
+20260816030000_link_part_sales_customers.sql
+20260816040000_part_sales_approval_payments.sql
+```
 
-## Database
-
-Supabase migrations live in `supabase/migrations`. Apply them in timestamp order for a fresh project. The generated TypeScript database types live in:
+The generated TypeScript database types live in:
 
 ```text
 src/lib/supabase/database.types.ts
 ```
 
 Keep RLS enabled. Public visitors should only read published/active content and submit safe public forms. Admin writes must go through authenticated server actions or protected route handlers.
+
+## Admin Role Notes
+
+- Developer accounts are protected from admin-level modification.
+- Admins/managers can manage sales, stock, customers, and approvals according to role permissions.
+- Apprentices can search allowed stock/customer records without receiving privileged write access.
 
 ## Quality Checks
 

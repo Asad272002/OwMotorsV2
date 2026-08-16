@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Bike, AlertTriangle } from "lucide-react";
-import { AdminPageHeader, AdminPanel } from "@/components/admin/admin-ui";
+import { AdminPageHeader } from "@/components/admin/admin-ui";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { listArchivedMotorcycleVariantsForStock, listMotorcycleVariantsForStock, listParts, listPartsForApprentice, listStockBrands } from "@/lib/erp/queries";
-import { VariantAdminEditorTable, type BrandOptionClient, type VariantRowClient } from "./variant-table.client";
-import { PartsAvailabilityTable, type PartAvailabilityRow } from "./parts-availability-table.client";
+import type { BrandOptionClient, VariantRowClient } from "./variant-table.client";
+import type { PartAvailabilityRow } from "./parts-availability-table.client";
+import { StockAvailabilityBrowser } from "./stock-availability-browser.client";
 
 export const metadata = { title: "Stock Availability" };
 
@@ -63,37 +64,15 @@ export default async function StockAvailabilityPage() {
         ))}
       </section>
 
-      <AdminPanel
-        title="Bikes by brand, CC & color"
-        description={
-          canEditPrices
-            ? "Admin quick editor: update pricing here, or archive a bike variant when it should no longer appear in sales or stock workflows."
-            : isApprentice
-              ? "Apprentice view: only stock status shown. See Managers for exact quantities and pricing."
-              : "Managers can read stock levels and archive inactive bike variants. Pricing changes require Admin / Developer access."
-        }
-      >
-        <VariantAdminEditorTable variants={variants as unknown as VariantRowClient[]} isApprentice={isApprentice} canArchive={canArchiveBikes} brands={brands} />
-      </AdminPanel>
-
-      {!isApprentice ? (
-        <AdminPanel
-          title="Archived bikes"
-          description="Hidden from stock availability and new-sale selection. Restore when this bike should be available again."
-        >
-          <VariantAdminEditorTable
-            variants={archivedVariants as unknown as VariantRowClient[]}
-            isApprentice={false}
-            archived
-            canArchive={canArchiveBikes}
-            brands={brands}
-          />
-        </AdminPanel>
-      ) : null}
-
-      <AdminPanel title="Spare parts availability" description={isApprentice ? "Apprentice view: search parts by SKU, name, category, or availability." : "All spare parts. Search by SKU, name, category, or stock status."}>
-        <PartsAvailabilityTable parts={parts} isApprentice={isApprentice} />
-      </AdminPanel>
+      <StockAvailabilityBrowser
+        variants={variants as unknown as VariantRowClient[]}
+        archivedVariants={archivedVariants as unknown as VariantRowClient[]}
+        parts={parts}
+        isApprentice={isApprentice}
+        canEditPrices={canEditPrices}
+        canArchiveBikes={canArchiveBikes}
+        brands={brands}
+      />
     </div>
   );
 }

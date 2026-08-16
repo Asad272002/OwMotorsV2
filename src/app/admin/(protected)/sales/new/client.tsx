@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bike, Building2, CheckCircle2, Circle, CircleDot, CreditCard, FileText, Landmark, PencilLine, Plus, Trash2, Wallet, Search
+  ArrowLeft, ArrowRight, Bike, Building2, CheckCircle2, Circle, CircleDot, CreditCard, FileText, Landmark, LockKeyhole, PencilLine, Plus, Search, Trash2, Wallet
 } from "lucide-react";
 import { AdminPageHeader, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
-import { initiateSale } from "@/app/admin/erp-actions/sales";
+import { checkChasisAvailability, initiateSale } from "@/app/admin/erp-actions/sales";
 
 const ERROR_INPUT_RING = "ring-2 ring-[#C62828]/70 border-[#C62828] focus:ring-[#C62828]";
 function joinMessages(msgs: readonly (string | null | undefined)[] | null | undefined): string {
@@ -42,6 +42,7 @@ const paymentMethods: { value: "cash" | "bank_transfer" | "cheque" | "demand_dra
 
 type PaymentRow = { id: string; payment_method: string; bank_id: string; amount: string; instrument_number: string; transaction_ref: string };
 type StepStatus = "complete" | "active" | "pending";
+type ChasisCheck = { status: "idle" | "checking" | "available" | "duplicate" | "error"; message: string; value: string };
 
 function pkr(n: number | string): string {
   const num = typeof n === "string" ? Number(n.replace(/[^0-9]/g, "")) || 0 : n;
@@ -79,6 +80,9 @@ function StepPanel({
   description,
   status,
   actions,
+  open = true,
+  summary,
+  footer,
   delay = 0,
   children,
 }: Readonly<{
@@ -87,6 +91,9 @@ function StepPanel({
   description: string;
   status: StepStatus;
   actions?: React.ReactNode;
+  open?: boolean;
+  summary?: React.ReactNode;
+  footer?: React.ReactNode;
   delay?: number;
   children: React.ReactNode;
 }>) {
@@ -98,7 +105,7 @@ function StepPanel({
       : "border-[#E5E7EB] bg-white text-[#6B7280]";
 
   return (
-    <section className={`new-sale-step overflow-hidden rounded-lg border bg-white shadow-[0_12px_28px_rgb(17_17_17/0.06)] ${status === "active" ? "border-[#C62828]/35 ring-4 ring-[#C62828]/5" : "border-[#E5E7EB]"}`} style={{ animationDelay: `${delay}ms` }}>
+    <section className={`new-sale-step overflow-hidden rounded-lg border bg-white shadow-[0_12px_28px_rgb(17_17_17/0.06)] transition-all duration-300 ${status === "active" && open ? "border-[#C62828]/35 ring-4 ring-[#C62828]/5" : "border-[#E5E7EB]"}`} style={{ animationDelay: `${delay}ms` }}>
       <header className="flex flex-col justify-between gap-4 border-b border-[#E5E7EB] px-5 py-4 sm:flex-row sm:items-center sm:px-6">
         <div className="flex items-start gap-3">
           <span className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${tone}`}>
@@ -112,11 +119,16 @@ function StepPanel({
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </header>
-      <div className="p-5 sm:p-6">{children}</div>
+      {!open && summary ? <div className="border-b border-[#F3F4F6] bg-[#FAFAFA] px-5 py-4 sm:px-6">{summary}</div> : null}
+      {open ? (
+        <div className="animate-[saleStepIn_260ms_ease-out] p-5 sm:p-6">
+          {children}
+          {footer ? <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-[#F3F4F6] pt-5">{footer}</div> : null}
+        </div>
+      ) : null}
     </section>
   );
 }
-
 export default function NewSalePageClient(props: {
   variants: Variant[]; banks: Bank[]; customers: Customer[]; myProfileId: string | null;
 }) {
@@ -129,6 +141,7 @@ export default function NewSalePageClient(props: {
 
   const [variantId, setVariantId] = useState<string>("");
   const [chasisNumber, setChasisNumber] = useState("");
+  const [chasisCheck, setChasisCheck] = useState<ChasisCheck>({ status: "idle", message: "Enter chasis number.", value: "" });
   const [quantity, setQuantity] = useState<number>(1);
   const [saleNotes, setSaleNotes] = useState("");
 
@@ -178,14 +191,39 @@ export default function NewSalePageClient(props: {
   }, [customerSearch, customers]);
 
   const selectedCustomer = useMemo(() => customers.find(c => c.id === existingCustomerId) ?? null, [existingCustomerId, customers]);
-  const hasBuyer = Boolean(selectedCustomer || createNewCustomer);
-  const bikeStepComplete = Boolean(chosen && chasisNumber.trim() && hasBuyer);
-  const paymentStepComplete = totalAmount > 0 && paidAmount === totalAmount && payments.some(p => (Number(p.amount.replace(/[^0-9]/g, "")) || 0) > 0);
-  const stepStates: [StepStatus, StepStatus, StepStatus] = [
-    bikeStepComplete ? "complete" : "active",
-    !bikeStepComplete ? "pending" : paymentStepComplete ? "complete" : "active",
-    bikeStepComplete && paymentStepComplete ? "active" : "pending",
-  ];
+  const chasisReady = chasisNumber.trim().length >= 3 && chasisCheck.value === chasisNumber.trim().toUpperCase() && chasisCheck.status === "available";
+  const hasNewCustomerIdentity = newCustomer.fullName.trim().length >= 2 && newCustomer.cnic.replace(/\D/g, "").length === 13;
+  const customerStepComplete = createNewCustomer ? hasNewCustomerIdentity : Boolean(selectedCustomer);
+  const bikeStepComplete = Boolean(chosen && chasisReady && quantity > 0 && (chosen.quantity ?? 0) >= quantity);
+  const saleInfoStepComplete = bikeStepComplete && customerStepComplete;
+  const paymentRowsComplete = payments.every(p => {
+    const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
+    const amt = Number(p.amount.replace(/[^0-9]/g, "")) || 0;
+    return amt > 0 && (!needBank || !!p.bank_id);
+  });
+  const paymentStepComplete = paymentRowsComplete && totalAmount > 0 && paidAmount === totalAmount && payments.some(p => (Number(p.amount.replace(/[^0-9]/g, "")) || 0) > 0);
+  const firstIncompleteStep = !saleInfoStepComplete ? 0 : !paymentStepComplete ? 1 : 2;
+  const [activeStep, setActiveStep] = useState(0);
+  const visibleStep = Math.min(activeStep, firstIncompleteStep);
+  const stepStates: [StepStatus, StepStatus, StepStatus] = [0, 1, 2].map((idx) => {
+    const complete = idx === 0 ? saleInfoStepComplete : idx === 1 ? paymentStepComplete : false;
+    if (complete && idx < firstIncompleteStep) return "complete";
+    if (idx === visibleStep) return "active";
+    return "pending";
+  }) as [StepStatus, StepStatus, StepStatus];
+  useEffect(() => {
+    const value = chasisNumber.trim().toUpperCase();
+    if (value.length < 3) return;
+    const timer = window.setTimeout(() => {
+      void checkChasisAvailability(value).then((result) => {
+        setChasisCheck({ status: result.status, message: result.message, value });
+      }).catch(() => {
+        setChasisCheck({ status: "error", message: "Could not check chasis right now.", value });
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [chasisNumber]);
+
 
   function addPayment() {
     const newId = crypto.randomUUID();
@@ -215,6 +253,7 @@ export default function NewSalePageClient(props: {
     setVariantId(nextVariantId);
     setQuantity(1);
     setChasisNumber("");
+    setChasisCheck({ status: "idle", message: "Enter chasis number.", value: "" });
     setFormErrors((prev) => ({
       ...prev,
       chasisNumber: ["Enter the chasis number for the newly selected bike."],
@@ -232,12 +271,8 @@ export default function NewSalePageClient(props: {
     return () => { window.removeEventListener("admin-form:errors", onErrors as EventListener); };
   }, []);
 
-  const paymentsValid = payments.every(p => {
-    const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
-    const amt = Number(p.amount.replace(/[^0-9]/g, "")) || 0;
-    return amt > 0 && (!needBank || !!p.bank_id);
-  });
-  const canSubmit = !!chosen && !!chasisNumber && hasBuyer && paymentsValid && paidAmount === totalAmount && totalAmount > 0;
+  const paymentsValid = paymentRowsComplete;
+  const canSubmit = saleInfoStepComplete && paymentsValid && paidAmount === totalAmount && totalAmount > 0;
   function errText(...paths: string[]): string {
     for (const p of paths) {
       const arr = formErrors[p];
@@ -252,6 +287,17 @@ export default function NewSalePageClient(props: {
     });
   }
 
+  function goToStep(index: number) {
+    if (index > firstIncompleteStep) return;
+    setActiveStep(index);
+  }
+
+  const flowSteps = [
+    { label: "Bike & buyer", detail: chosen ? `${chosen.motorcycle?.brand?.name ?? ""} ${chosen.motorcycle?.name ?? ""}`.trim() : "Choose bike and buyer" },
+    { label: "Payment", detail: totalAmount > 0 ? `${pkr(paidAmount)} of ${pkr(totalAmount)}` : "Waiting for sale total" },
+    { label: "Approval", detail: canSubmit ? "Ready to submit" : "Final check" },
+  ];
+
   return (
     <div className="space-y-8">
       <AdminPageHeader
@@ -261,28 +307,34 @@ export default function NewSalePageClient(props: {
         actions={<Link href="/admin/sales/list" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-4 text-sm font-semibold text-[#374151] hover:bg-[#F7F7F8]">View all sales</Link>}
       />
 
-      <div className="new-sale-step rounded-lg border border-[#E5E7EB] bg-white p-3 shadow-[0_8px_20px_rgb(17_17_17/0.05)]">
+      <div className="new-sale-step rounded-xl border border-[#E5E7EB] bg-white p-2 shadow-[0_8px_20px_rgb(17_17_17/0.05)]">
         <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-          {[
-            { label: "Bike & buyer", value: stepStates[0] },
-            { label: "Payment", value: stepStates[1] },
-            { label: "Approval request", value: stepStates[2] },
-          ].map((item, idx) => {
-            const active = item.value === "active";
-            const complete = item.value === "complete";
+          {flowSteps.map((item, idx) => {
+            const status = stepStates[idx];
+            const active = visibleStep === idx;
+            const complete = status === "complete";
+            const locked = idx > firstIncompleteStep;
             return (
-              <div key={item.label} className={`flex items-center gap-3 rounded-md border px-3 py-3 transition-all duration-300 ${complete ? "border-green-200 bg-green-50" : active ? "border-[#C62828]/30 bg-[#FEF2F2]" : "border-[#E5E7EB] bg-[#FAFAFA]"}`}>
-                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-black ${complete ? "bg-[#15803D] text-white" : active ? "bg-[#C62828] text-white" : "bg-white text-[#6B7280]"}`}>{complete ? "OK" : idx + 1}</span>
-                <div>
-                  <p className="text-sm font-bold text-[#111111]">{item.label}</p>
-                  <p className="text-xs capitalize text-[#6B7280]">{item.value}</p>
-                </div>
-              </div>
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => goToStep(idx)}
+                disabled={locked}
+                className={`group relative flex min-h-[88px] items-center gap-3 rounded-lg border px-4 py-3 text-left transition-all duration-300 disabled:cursor-not-allowed ${complete ? "border-green-200 bg-green-50" : active ? "border-[#C62828]/35 bg-[#FEF2F2] shadow-[0_10px_24px_rgb(198_40_40/0.10)]" : locked ? "border-[#E5E7EB] bg-[#FAFAFA] opacity-70" : "border-[#E5E7EB] bg-white hover:border-[#C62828]/30 hover:bg-[#FFF7F7]"}`}
+              >
+                <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-black transition-transform duration-300 ${complete ? "bg-[#15803D] text-white" : active ? "bg-[#C62828] text-white group-hover:scale-105" : "bg-white text-[#6B7280] ring-1 ring-[#E5E7EB]"}`}>
+                  {complete ? <CheckCircle2 aria-hidden="true" className="h-5 w-5" /> : locked ? <LockKeyhole aria-hidden="true" className="h-4 w-4" /> : idx + 1}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-[#111111]">{item.label}</span>
+                  <span className="mt-1 block truncate text-xs text-[#6B7280]">{item.detail}</span>
+                </span>
+                {active ? <span className="absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-[#C62828]" /> : null}
+              </button>
             );
           })}
         </div>
       </div>
-
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-md border border-[#E5E7EB] bg-white p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#6B7280]">Bike</p>
@@ -301,7 +353,27 @@ export default function NewSalePageClient(props: {
         </div>
       </div>
 
-      <StepPanel step={1} title="Bike & Customer" description="Select the stock item and customer." status={stepStates[0]} delay={80} actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}>
+      <StepPanel
+        step={1}
+        title="Bike & Customer"
+        description="Select the stock item, chasis number, and buyer."
+        status={stepStates[0]}
+        open={visibleStep === 0}
+        delay={80}
+        actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}
+        summary={
+          <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+            <p><span className="font-bold text-[#111111]">Bike:</span> {chosen ? `${chosen.motorcycle?.brand?.name ?? ""} ${chosen.motorcycle?.name ?? ""} ${chosen.cc}cc ${chosen.color_name ?? ""}`.trim() : "Not selected"}</p>
+            <p><span className="font-bold text-[#111111]">Chasis:</span> {chasisNumber || "Not entered"}</p>
+            <p><span className="font-bold text-[#111111]">Buyer:</span> {selectedCustomer?.full_name ?? (createNewCustomer ? newCustomer.fullName || "New customer" : "Not selected")}</p>
+          </div>
+        }
+        footer={
+          <button type="button" disabled={!saleInfoStepComplete} onClick={() => setActiveStep(1)} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#C62828] bg-[#C62828] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#A91F1F] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#F3F4F6] disabled:text-[#9CA3AF]">
+            Continue to payment <ArrowRight aria-hidden="true" className="h-4 w-4" />
+          </button>
+        }
+      >
         <div className="space-y-6">
           <div className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">
             <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
@@ -338,7 +410,7 @@ export default function NewSalePageClient(props: {
                 const selected = v.id === variantId;
                 const available = (v.quantity ?? 0) > 0;
                 return (
-                  <button key={v.id} type="button" onClick={() => chooseVariant(v.id)} className={`flex min-h-[76px] items-start gap-3 rounded-md border p-3 text-left transition-colors ${selected ? "border-[#C62828] bg-[#FEF2F2] ring-2 ring-[#C62828]/15" : "border-[#E5E7EB] bg-white hover:border-[#C62828]/50 hover:bg-[#FFF7F7]"} ${!available ? "opacity-60" : ""}`}>
+                  <button key={v.id} type="button" disabled={!available} onClick={() => chooseVariant(v.id)} className={`flex min-h-[76px] items-start gap-3 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed ${selected ? "border-[#C62828] bg-[#FEF2F2] ring-2 ring-[#C62828]/15" : available ? "border-[#E5E7EB] bg-white hover:border-[#C62828]/50 hover:bg-[#FFF7F7]" : "border-[#E5E7EB] bg-[#FAFAFA]"} ${!available ? "opacity-60" : ""}`}>
                     <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${selected ? "bg-white text-[#C62828]" : "bg-[#F7F7F8] text-[#374151]"}`}>
                       <Bike aria-hidden="true" className="h-4 w-4" />
                     </div>
@@ -359,13 +431,15 @@ export default function NewSalePageClient(props: {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
               <label htmlFor="newSale-chasisNumber" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
-              <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => { const next = e.target.value.toUpperCase(); setChasisNumber(next); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") ? ERROR_INPUT_RING : ""}`} placeholder="e.g. MP125GP-2025-894321" />
-              {hasErr("chasisNumber", "chasis_number") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</div> : <p className="mt-1 text-xs text-[#6B7280]">Must be unique across all sales, including pending approvals.</p>}
+              <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => { const next = e.target.value.toUpperCase(); const trimmed = next.trim(); setChasisNumber(next); setChasisCheck(trimmed.length < 3 ? { status: "idle", message: "Enter chasis number.", value: trimmed } : { status: "checking", message: "Checking chasis...", value: trimmed }); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") || chasisCheck.status === "duplicate" ? ERROR_INPUT_RING : chasisCheck.status === "available" ? "border-green-300 ring-2 ring-green-500/20" : ""}`} placeholder="e.g. MP125GP-2025-894321" />
+              {hasErr("chasisNumber", "chasis_number") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</div> : (
+                <div className={`mt-2 rounded-md border px-3 py-2 text-xs font-semibold ${chasisCheck.status === "available" ? "border-green-200 bg-green-50 text-[#15803D]" : chasisCheck.status === "duplicate" ? "border-[#FECACA] bg-[#FEF2F2] text-[#C62828]" : chasisCheck.status === "checking" ? "border-amber-200 bg-amber-50 text-[#B45309]" : "border-[#E5E7EB] bg-[#FAFAFA] text-[#6B7280]"}`}>{chasisCheck.message}</div>
+              )}
             </div>
             <div>
               <label htmlFor="newSale-quantitySold" className={adminLabelClass}>Quantity</label>
-              <input id="newSale-quantitySold" data-error-path="quantitySold" name="quantitySold" form="main-sale-form" type="number" min={1} max={chosen?.quantity ?? 99} value={Number.isFinite(quantity) ? quantity : 1} onChange={e => setQuantity(Math.max(1, Number(e.target.value) || 1))} className={`${adminInputClass} ${hasErr("quantitySold") ? ERROR_INPUT_RING : ""}`} />
-              {hasErr("quantitySold") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("quantitySold")}</p> : null}
+              <input id="newSale-quantitySold" data-error-path="quantitySold" name="quantitySold" form="main-sale-form" type="number" min={1} max={chosen?.quantity ?? 99} value={Number.isFinite(quantity) ? quantity : 1} onChange={e => setQuantity(Math.min(chosen?.quantity ?? 1, Math.max(1, Number(e.target.value) || 1)))} className={`${adminInputClass} ${hasErr("quantitySold") ? ERROR_INPUT_RING : ""}`} />
+              {hasErr("quantitySold") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("quantitySold")}</p> : chosen && (chosen.quantity ?? 0) < quantity ? <p className="mt-1 text-xs font-semibold text-[#C62828]">Only {chosen.quantity ?? 0} unit(s) available.</p> : null}
             </div>
             <div>
               <label className={adminLabelClass}>Sale total (auto)</label>
@@ -466,6 +540,20 @@ export default function NewSalePageClient(props: {
         title="Payments"
         description="Match the paid amount to the sale total."
         status={stepStates[1]}
+        open={visibleStep === 1}
+        summary={
+          <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+            <p><span className="font-bold text-[#111111]">Total:</span> {pkr(totalAmount)}</p>
+            <p><span className="font-bold text-[#111111]">Paid:</span> {pkr(paidAmount)}</p>
+            <p><span className="font-bold text-[#111111]">Status:</span> {paymentState}</p>
+          </div>
+        }
+        footer={
+          <>
+            <button type="button" onClick={() => setActiveStep(0)} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#D1D5DB] bg-white px-5 text-sm font-semibold text-[#374151] transition-colors hover:bg-[#F7F7F8]"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Back</button>
+            <button type="button" disabled={!paymentStepComplete} onClick={() => setActiveStep(2)} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#C62828] bg-[#C62828] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#A91F1F] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#F3F4F6] disabled:text-[#9CA3AF]">Review sale <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
+          </>
+        }
         delay={160}
         actions={
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
@@ -539,6 +627,8 @@ export default function NewSalePageClient(props: {
         title="Submit for Admin approval"
         description="Send the checked sale to Admin."
         status={stepStates[2]}
+        open={visibleStep === 2}
+        summary={<p className="text-sm text-[#6B7280]">Complete the previous checks to unlock final submission.</p>}
         delay={240}
       >
         <AdminForm
@@ -547,7 +637,7 @@ export default function NewSalePageClient(props: {
           pendingLabel="Submitting sale..."
           confirmMessage={chosen ? `Submit sale for ${chosen.motorcycle?.brand?.name} ${chosen.motorcycle?.name} (${chosen.cc}cc ${chosen.color_name ?? "no color"}) for approval?` : "Continue"}
           className="grid grid-cols-1 gap-5 md:grid-cols-2"
-          formAttributes={{ id: "main-sale-form" }}
+          formAttributes={{ id: "main-sale-form", onSubmit: (event) => { if (!canSubmit) event.preventDefault(); } }}
           showErrorSummary={false}
         >
           {/* ===== Discriminator: existing customer vs new customer ===== */}

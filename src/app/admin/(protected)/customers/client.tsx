@@ -75,17 +75,35 @@ export default function CustomersPageClient(props: {
         ) : undefined}
       />
 
-      <AdminPanel title="Customer lookup" description="Type CNIC (with or without dashes), chasis number, phone, or name. Matches any part.">
-        <div className="max-w-xl">
-          <label className={adminLabelClass}>Search customers</label>
-          <div className="relative mt-2">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
-            <input value={q} onChange={e => setQ(e.target.value)} className={`${adminInputClass} pl-10 font-display text-lg`} placeholder="e.g. 3520212345671, or chasis number…" autoFocus />
+      <section className={`grid grid-cols-1 gap-4 ${canEdit ? "xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]" : ""}`}>
+        <AdminPanel title="Customer lookup" description="Search by CNIC, chasis, phone, sale number, SKU, or name.">
+          <div>
+            <label className={adminLabelClass}>Search customers</label>
+            <div className="relative mt-2">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+              <input value={q} onChange={e => setQ(e.target.value)} className={`${adminInputClass} pl-10 font-display text-lg`} placeholder="CNIC, phone, chasis, sale #, SKU, or name" autoFocus />
+            </div>
           </div>
-        </div>
-        <p className="mt-3 text-xs text-[#6B7280]">Showing {filtered.length} of {customers.length} total customers.</p>
-      </AdminPanel>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-md border border-[#E5E7EB] bg-[#FAFAFA] p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6B7280]">Showing</p><p className="mt-1 font-display text-2xl font-bold text-[#111111]">{filtered.length}</p></div>
+            <div className="rounded-md border border-[#E5E7EB] bg-[#FAFAFA] p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6B7280]">Total</p><p className="mt-1 font-display text-2xl font-bold text-[#111111]">{customers.length}</p></div>
+          </div>
+        </AdminPanel>
 
+        {canEdit ? (
+          <AdminPanel title="Register customer" description="Create a buyer record without leaving this page.">
+            <AdminForm action={createOrUpdateCustomer} submitLabel="Save customer" className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div><label className={adminLabelClass}>Full name</label><input name="fullName" required className={adminInputClass} placeholder="e.g. Rashid Mehmood" /></div>
+              <div><label className={adminLabelClass}>CNIC</label><input name="cnic" required pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" className={adminInputClass} placeholder="35202-1234567-1" /></div>
+              <div><label className={adminLabelClass}>Phone primary</label><input name="phonePrimary" pattern="^\+?[0-9 -]{10,20}$" className={adminInputClass} placeholder="03001234567" /></div>
+              <div><label className={adminLabelClass}>Phone secondary</label><input name="phoneSecondary" className={adminInputClass} /></div>
+              <div><label className={adminLabelClass}>City</label><input name="city" className={adminInputClass} /></div>
+              <div><label className={adminLabelClass}>Address</label><input name="address" className={adminInputClass} /></div>
+              <div className="md:col-span-2"><label className={adminLabelClass}>Notes</label><textarea name="notes" className={`${adminInputClass} min-h-[72px]`} /></div>
+            </AdminForm>
+          </AdminPanel>
+        ) : null}
+      </section>
       <AdminPanel
         title="Results"
         description={canEdit ? "Expand a customer to view full history, edit details, or start a new sale against them." : "Expand a customer to see full record and purchase history."}
@@ -207,23 +225,7 @@ export default function CustomersPageClient(props: {
           </ul>
         )}
       </AdminPanel>
-
-      {canEdit ? (
-        <section id="new-customer">
-          <AdminPanel title="Register a new customer" description="Save before starting a sale if you want the customer record linked. Or, create inline during sale creation.">
-            <AdminForm action={createOrUpdateCustomer} submitLabel="Save new customer" className="grid grid-cols-1 gap-5 md:grid-cols-3">
-              <div><label className={adminLabelClass}>Full name (required)</label><input name="fullName" required className={adminInputClass} placeholder="e.g. Rashid Mehmood" /></div>
-              <div><label className={adminLabelClass}>CNIC (13 digits, required)</label><input name="cnic" required pattern="^([0-9]{13}|[0-9]{5}-[0-9]{7}-[0-9]{1})$" className={adminInputClass} placeholder="3520212345671" /></div>
-              <div><label className={adminLabelClass}>Phone primary</label><input name="phonePrimary" pattern="^\+?[0-9 -]{10,20}$" className={adminInputClass} placeholder="+92 300 1234567" /></div>
-              <div><label className={adminLabelClass}>Phone secondary</label><input name="phoneSecondary" className={adminInputClass} /></div>
-              <div><label className={adminLabelClass}>City</label><input name="city" className={adminInputClass} /></div>
-              <div><label className={adminLabelClass}>Address (as per CNIC)</label><input name="address" className={adminInputClass} /></div>
-              <div className="md:col-span-3"><label className={adminLabelClass}>Notes</label><textarea name="notes" className={`${adminInputClass} min-h-[72px]`} /></div>
-            </AdminForm>
-          </AdminPanel>
-        </section>
-      ) : null}
-    </div>
+`r`n    </div>
   );
 }
 
