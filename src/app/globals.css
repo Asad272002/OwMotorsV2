@@ -496,3 +496,38 @@ header.sticky :is(a, button, summary):focus-visible,
   content: "";
   animation: admin-badge-shine 3.2s ease-in-out infinite;
 }
+@keyframes admin-notification-pop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+@keyframes admin-notification-ring {
+  0% { box-shadow: 0 0 0 0 rgb(198 40 40 / 0.34); }
+  70% { box-shadow: 0 0 0 7px rgb(198 40 40 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(198 40 40 / 0); }
+}
+
+.admin-notification-badge {
+  display: inline-flex;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  border-radius: 999px;
+  background: #C62828;
+  color: white;
+  padding: 0 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: 0 8px 16px rgb(198 40 40 / 0.22);
+  animation: admin-notification-pop 1.9s ease-in-out infinite, admin-notification-ring 2.2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-notification-badge {
+    animation: none;
+  }
+}

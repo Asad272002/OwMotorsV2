@@ -32,12 +32,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { logoutAdmin } from "@/app/admin/auth-actions";
 
+type ActionCounts = {
+  salesApprovals: number;
+  stockApprovals: number;
+  total: number;
+};
+
 type NavItem = {
   href: string;
   label: string;
   description: string;
   icon: LucideIcon;
   roles?: readonly ("developer" | "admin" | "manager" | "apprentice")[];
+  badgeKey?: keyof ActionCounts;
 };
 
 type NavGroup = {
@@ -77,8 +84,8 @@ const NAV_GROUPS_ALL: readonly NavGroup[] = [
     id: "approvals",
     label: "Approvals",
     items: [
-      { href: "/admin/sales/approvals", label: "Sales Approval", description: "Approve sales", icon: FilePenLine, roles: ["developer", "admin"] },
-      { href: "/admin/stock/approvals", label: "Stock Approval", description: "Approve stock", icon: FilePenLine, roles: ["developer", "admin"] },
+      { href: "/admin/sales/approvals", label: "Sales Approval", description: "Approve sales", icon: FilePenLine, roles: ["developer", "admin"], badgeKey: "salesApprovals" },
+      { href: "/admin/stock/approvals", label: "Stock Approval", description: "Approve stock", icon: FilePenLine, roles: ["developer", "admin"], badgeKey: "stockApprovals" },
     ],
   },
   {
@@ -140,12 +147,14 @@ function SidebarContent({
   onToggleGroup,
   onNavigate,
   groups,
+  actionCounts,
 }: Readonly<{
   pathname: string;
   openGroups: ReadonlySet<string>;
   onToggleGroup: (id: string) => void;
   onNavigate?: () => void;
   groups: readonly NavGroup[];
+  actionCounts: ActionCounts;
 }>) {
   return (
     <nav aria-label="Admin navigation" className="flex-1 overflow-y-auto px-3 pb-6 pt-4">
@@ -172,6 +181,7 @@ function SidebarContent({
                 {group.items.map((item) => {
                   const active = isActivePath(pathname, item.href);
                   const Icon = item.icon;
+                  const count = item.badgeKey ? actionCounts[item.badgeKey] ?? 0 : 0;
                   return (
                     <li key={item.href}>
                       <Link
@@ -185,7 +195,8 @@ function SidebarContent({
                         }`}
                       >
                         <Icon aria-hidden="true" className={`h-[18px] w-[18px] shrink-0 ${active ? "text-[#C62828]" : "text-[#6B7280] group-hover:text-[#111111]"}`} />
-                        <span>{item.label}</span>
+                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        {count > 0 ? <span className="admin-notification-badge ml-auto" aria-label={`${count} actions required`}>{count > 99 ? "99+" : count}</span> : null}
                       </Link>
                     </li>
                   );
@@ -341,7 +352,7 @@ function UserMenu({ name, role }: Readonly<{ name: string; role: string }>) {
     </div>
   );
 }
-export function AdminShell({ children, actorName, actorRole }: Readonly<{ children: React.ReactNode; actorName: string; actorRole: string }>) {
+export function AdminShell({ children, actorName, actorRole, actionCounts }: Readonly<{ children: React.ReactNode; actorName: string; actorRole: string; actionCounts: ActionCounts }>) {
   const pathname = usePathname();
   const mobileCloseRef = useRef<HTMLButtonElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -394,7 +405,7 @@ export function AdminShell({ children, actorName, actorRole }: Readonly<{ childr
             <span><strong className="block font-display text-lg leading-none">OW MOTORS</strong><span className="mt-1 block text-[10px] font-bold uppercase tracking-[0.16em] text-[#C62828]">ERP</span></span>
           </Link>
         </div>
-        <SidebarContent pathname={pathname} openGroups={openGroups} onToggleGroup={toggleGroup} groups={groups} />
+        <SidebarContent pathname={pathname} openGroups={openGroups} onToggleGroup={toggleGroup} groups={groups} actionCounts={actionCounts} />
         <div className="border-t border-[#E5E7EB] p-4"><Link href="/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-between rounded-md px-3 text-sm font-semibold text-[#374151] transition-colors hover:bg-[#F7F7F8] hover:text-[#C62828]"><span>View website</span><ExternalLink aria-hidden="true" className="h-4 w-4" /></Link></div>
       </aside>
 
@@ -404,7 +415,7 @@ export function AdminShell({ children, actorName, actorRole }: Readonly<{ childr
           <button type="button" onClick={() => setSearchOpen(true)} className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F7F7F8] px-4 text-left text-sm text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.03)] transition-colors hover:border-[#C62828]/50 hover:bg-white sm:max-w-2xl" aria-label="Search admin dashboard">
             <Search aria-hidden="true" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">Search sales, stock, customers</span><span className="ml-auto hidden items-center gap-1 rounded-md border border-[#D1D5DB] bg-white px-2 py-1 text-[10px] font-bold text-[#6B7280] sm:inline-flex"><Command aria-hidden="true" className="h-3 w-3" />K</span>
           </button>
-          <Link href="/admin#attention" className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:border-[#C62828]/40 hover:bg-[#FEF2F2] hover:text-[#C62828]" aria-label="Review dashboard attention summary"><Bell aria-hidden="true" className="h-5 w-5" /><span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#D97706]" /><span className="sr-only">Attention summary</span></Link>
+          <Link href="/admin#attention" className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:border-[#C62828]/40 hover:bg-[#FEF2F2] hover:text-[#C62828]" aria-label={`${actionCounts.total} actions require attention`}><Bell aria-hidden="true" className="h-5 w-5" />{actionCounts.total > 0 ? <span className="admin-notification-badge absolute -right-1 -top-1">{actionCounts.total > 99 ? "99+" : actionCounts.total}</span> : null}<span className="sr-only">Attention summary</span></Link>
           <UserMenu name={actorName} role={actorRole} />
         </header>
         <div className="border-b border-[#E5E7EB] bg-white px-4 py-3 sm:px-6 lg:px-8"><Breadcrumbs pathname={pathname} /></div>
@@ -419,7 +430,7 @@ export function AdminShell({ children, actorName, actorRole }: Readonly<{ childr
               <Link href="/admin" onClick={() => setMobileOpen(false)} className="flex min-h-11 items-center gap-3"><span className="flex h-10 w-14 items-center justify-center rounded-md border border-[#E5E7EB]"><Image src="/images/ow-motors-logo.png" alt="OW Motors" width={1536} height={1024} className="h-8 w-auto object-contain" /></span><span className="font-display text-lg font-bold">ERP</span></Link>
               <button ref={mobileCloseRef} type="button" onClick={() => setMobileOpen(false)} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-[#6B7280] hover:bg-[#F7F7F8] hover:text-[#111111]" aria-label="Close admin navigation"><X aria-hidden="true" className="h-5 w-5" /></button>
             </div>
-            <SidebarContent pathname={pathname} openGroups={openGroups} onToggleGroup={toggleGroup} onNavigate={() => setMobileOpen(false)} groups={groups} />
+            <SidebarContent pathname={pathname} openGroups={openGroups} onToggleGroup={toggleGroup} onNavigate={() => setMobileOpen(false)} groups={groups} actionCounts={actionCounts} />
           </aside>
         </div>
       ) : null}

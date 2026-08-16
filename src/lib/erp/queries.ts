@@ -23,6 +23,32 @@ function privileged(): PrivClient {
   try { return createSubmissionSupabaseClient() as unknown as PrivClient; } catch { return null; }
 }
 
+
+export type AdminActionCounts = {
+  salesApprovals: number;
+  stockApprovals: number;
+  total: number;
+};
+
+export async function getAdminActionCounts(): Promise<AdminActionCounts> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin"].includes(actor.profile.role) || !actor.profile.is_active) {
+    return { salesApprovals: 0, stockApprovals: 0, total: 0 };
+  }
+
+  const sb = privileged();
+  if (!sb) return { salesApprovals: 0, stockApprovals: 0, total: 0 };
+
+  const [bikeSales, partSales, stockMovements] = await Promise.all([
+    sb.from("sales").select("id", { count: "exact", head: true }).eq("sale_status", "pending_approval"),
+    sb.from("part_sales").select("id", { count: "exact", head: true }).eq("sale_status", "pending_approval"),
+    sb.from("stock_movements").select("id", { count: "exact", head: true }).eq("approval_status", "pending_approval"),
+  ]);
+
+  const salesApprovals = (bikeSales.count ?? 0) + (partSales.count ?? 0);
+  const stockApprovals = stockMovements.count ?? 0;
+  return { salesApprovals, stockApprovals, total: salesApprovals + stockApprovals };
+}
 // ==============================================
 // USER MANAGEMENT QUERIES (Admin+ only)
 // ==============================================
