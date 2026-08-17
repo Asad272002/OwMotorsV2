@@ -41,7 +41,6 @@ src/components/admin                   Shared admin shell, forms, and UI
 src/lib/admin                          Admin action helpers and runtime utilities
 src/lib/erp                            ERP data queries and types
 src/lib/supabase                       Supabase clients, auth, storage, generated DB types
-supabase/migrations                    Database schema, RLS, and feature migrations
 public                                 Static assets
 ```
 
