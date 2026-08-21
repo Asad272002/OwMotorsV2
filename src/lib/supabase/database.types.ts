@@ -1043,6 +1043,7 @@ export type Database = {
           motorcycle_variant_id: string | null;
           part_id: string | null;
           quantity: number;
+          requested_chasis_numbers: string[];
           unit_cost_at_time: number | null;
           reason: string;
           notes: string | null;
@@ -1065,6 +1066,7 @@ export type Database = {
           motorcycle_variant_id?: string | null;
           part_id?: string | null;
           quantity: number;
+          requested_chasis_numbers?: string[];
           unit_cost_at_time?: number | null;
           reason: string;
           notes?: string | null;
@@ -1087,6 +1089,7 @@ export type Database = {
           motorcycle_variant_id?: string | null;
           part_id?: string | null;
           quantity?: number;
+          requested_chasis_numbers?: string[];
           unit_cost_at_time?: number | null;
           reason?: string;
           notes?: string | null;
@@ -1554,6 +1557,3 @@ export type TablesInsert<TableNameOrOptions extends TableName> =
 
 export type TablesUpdate<TableNameOrOptions extends TableName> =
   PublicSchema["Tables"][TableNameOrOptions]["Update"];
-
-
-

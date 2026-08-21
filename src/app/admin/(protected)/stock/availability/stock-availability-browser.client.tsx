@@ -17,6 +17,7 @@ export function StockAvailabilityBrowser({
   canArchiveBikes,
   brands,
   stockUnits,
+  saleHistoryChasisNumbers = [],
 }: {
   variants: VariantRowClient[];
   archivedVariants: VariantRowClient[];
@@ -26,6 +27,7 @@ export function StockAvailabilityBrowser({
   canArchiveBikes: boolean;
   brands: BrandOptionClient[];
   stockUnits: { id: string; motorcycle_variant_id: string; chasis_number: string; status: string }[];
+  saleHistoryChasisNumbers?: string[];
 }) {
   const [active, setActive] = useState<TabKey>("bikes");
   const inStockBikes = useMemo(() => variants.filter((variant) => (variant.quantity ?? 0) > 0 && variant.stock_status !== "out_of_stock").length, [variants]);
@@ -81,11 +83,11 @@ export function StockAvailabilityBrowser({
 
       <AdminPanel title={title} description={description}>
         {active === "bikes" ? (
-          <VariantAdminEditorTable variants={variants} isApprentice={isApprentice} canArchive={canArchiveBikes} brands={brands} stockUnits={stockUnits} />
+          <VariantAdminEditorTable variants={variants} isApprentice={isApprentice} canArchive={canArchiveBikes} brands={brands} stockUnits={stockUnits} saleHistoryChasisNumbers={saleHistoryChasisNumbers} />
         ) : active === "parts" ? (
           <PartsAvailabilityTable parts={parts} isApprentice={isApprentice} />
         ) : (
-          <VariantAdminEditorTable variants={archivedVariants} isApprentice={false} archived canArchive={canArchiveBikes} brands={brands} stockUnits={[]} />
+          <VariantAdminEditorTable variants={archivedVariants} isApprentice={false} archived canArchive={canArchiveBikes} brands={brands} stockUnits={[]} saleHistoryChasisNumbers={saleHistoryChasisNumbers} />
         )}
       </AdminPanel>
     </div>

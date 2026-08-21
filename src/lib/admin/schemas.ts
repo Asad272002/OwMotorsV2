@@ -142,6 +142,22 @@ export const simpleBikeStockEditSchema = z.object({
   price: money,
 });
 
+export const bikeChasisBackfillSchema = z.object({
+  variantId: uuid,
+  chasisNumbers: chasisNumberList,
+}).superRefine((value, ctx) => {
+  const unique = new Set(value.chasisNumbers.map((item) => item.toUpperCase()));
+  if (value.chasisNumbers.length < 1) {
+    ctx.addIssue({ code: "custom", path: ["chasisNumbers"], message: "Enter at least one chasis number." });
+  }
+  if (unique.size !== value.chasisNumbers.length) {
+    ctx.addIssue({ code: "custom", path: ["chasisNumbers"], message: "Each chasis number must be unique." });
+  }
+});
+export const bikeChasisUpdateSchema = z.object({
+  unitId: uuid,
+  chasisNumber: z.string().trim().toUpperCase().min(3).max(60).regex(/^[A-Z0-9][A-Z0-9 _/-]*$/, "Use alphanumeric chasis numbers only."),
+});
 export const variantArchiveSchema = z.object({
   variantId: uuid,
   mode: z.enum(["archive", "restore"]),
@@ -258,6 +274,7 @@ export const stockMovementSchema = z.object({
   partId: uuid.optional(),
   quantity: z.coerce.number().int().min(1, "Quantity must be at least 1."),
   unitCostAtTime: money.optional(),
+  chasisNumbers: chasisNumberList.optional().default([]),
   reason: z.string().trim().min(3, "Explain the reason for this stock change (at least 3 characters).").max(500),
   notes: optionalString(z.string().max(2000)),
 }).superRefine((val, ctx) => {
@@ -274,6 +291,16 @@ export const stockMovementSchema = z.object({
   }
   if (hasVariant && hasPart) {
     ctx.addIssue({ code: "custom", message: "Select only one target, not both.", path: ["motorcycleVariantId"] });
+  }
+  if (val.movementType === "motorcycle_add") {
+    const chasisNumbers = val.chasisNumbers ?? [];
+    const unique = new Set(chasisNumbers.map((item) => item.toUpperCase()));
+    if (chasisNumbers.length !== val.quantity) {
+      ctx.addIssue({ code: "custom", message: `Enter exactly ${val.quantity} chasis number(s), one for each added bike.`, path: ["chasisNumbers"] });
+    }
+    if (unique.size !== chasisNumbers.length) {
+      ctx.addIssue({ code: "custom", message: "Each chasis number must be unique.", path: ["chasisNumbers"] });
+    }
   }
 });
 
@@ -512,7 +539,3 @@ export const saleApprovalSchema = z.object({
 
 export const receiptGenerationSchema = z.object({ saleId: uuid });
 export const receiptPrintSchema = z.object({ receiptId: uuid });
-
-
-
-

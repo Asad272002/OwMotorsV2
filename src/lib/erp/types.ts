@@ -121,6 +121,7 @@ export interface StockMovement {
   readonly motorcycle_variant_id: string | null;
   readonly part_id: string | null;
   readonly quantity: number;
+  readonly requested_chasis_numbers?: readonly string[];
   readonly unit_cost_at_time: number | null;
   readonly reason: string;
   readonly notes: string | null;
@@ -392,6 +393,3 @@ export interface ReceiptPrintPayload {
   readonly generated_at?: string;
   [key: string]: unknown;
 }
-
-
-

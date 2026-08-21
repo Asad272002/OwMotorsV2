@@ -387,7 +387,7 @@ export default function NewSalePageClient(props: {
                 <label className={adminLabelClass}>Search bike</label>
                 <div className="relative mt-2">
                   <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
-                  <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} bg-white pl-10`} placeholder="Search bike model, brand, color, or CC" />
+                  <input value={bikeFilter ?? ""} onChange={e => setBikeFilter(e.target.value)} className={`${adminInputClass} bg-white pl-10`} placeholder="Search bike model, brand, color, CC, or chasis" />
                 </div>
               </div>
               <div className="rounded-md border border-[#E5E7EB] bg-white px-4 py-3 lg:min-w-[320px]">
@@ -437,14 +437,20 @@ export default function NewSalePageClient(props: {
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
-              <label htmlFor="newSale-chasisSearch" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
-              <input id="newSale-chasisSearch" value={chasisSearch} onChange={(event) => setChasisSearch(event.target.value.toUpperCase())} disabled={!chosen} className={adminInputClass} placeholder={chosen ? "Search available chasis..." : "Pick a bike first"} />
-              <select data-error-path="chasisNumber" value={selectedStockUnitId} onChange={(event) => { const id = event.target.value; setSelectedStockUnitId(id); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "motorcycleStockUnitId") ? ERROR_INPUT_RING : chasisReady ? "border-green-300 ring-2 ring-green-500/20" : ""}`}>
-                <option value="">{chosen ? "Select available chasis" : "Pick a bike first"}</option>
-                {availableChasisUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.chasis_number}</option>)}
-              </select>
+              <label htmlFor="newSale-chasisSelect" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
+              {!chosen ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-semibold text-[#B45309]">Pick a bike first to view available chasis numbers.</div>
+              ) : (
+                <div className="space-y-2">
+                  <input id="newSale-chasisSearch" value={chasisSearch} onChange={(event) => setChasisSearch(event.target.value.toUpperCase())} className={adminInputClass} placeholder="Search available chasis..." />
+                  <select id="newSale-chasisSelect" data-error-path="chasisNumber" value={selectedStockUnitId} onChange={(event) => { const id = event.target.value; setSelectedStockUnitId(id); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "motorcycleStockUnitId") ? ERROR_INPUT_RING : chasisReady ? "border-green-300 ring-2 ring-green-500/20" : ""}`}>
+                    <option value="">{availableChasisUnits.length ? "Select available chasis" : "No available chasis"}</option>
+                    {availableChasisUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.chasis_number}</option>)}
+                  </select>
+                </div>
+              )}
               {hasErr("chasisNumber", "motorcycleStockUnitId") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "motorcycleStockUnitId")}</div> : (
-                <div className={`mt-2 rounded-md border px-3 py-2 text-xs font-semibold ${chasisReady ? "border-green-200 bg-green-50 text-[#15803D]" : "border-amber-200 bg-amber-50 text-[#B45309]"}`}>{chosen ? (availableChasisUnits.length > 0 ? `${availableChasisUnits.length} available chasis number(s).` : "No available chasis registered for this bike.") : "Select a bike to view chasis numbers."}</div>
+                <div className={`mt-2 rounded-md border px-3 py-2 text-xs font-semibold ${chasisReady ? "border-green-200 bg-green-50 text-[#15803D]" : "border-amber-200 bg-amber-50 text-[#B45309]"}`}>{chosen ? (availableChasisUnits.length > 0 ? `${availableChasisUnits.length} available chasis number(s).` : "No available chasis registered for this bike.") : "Bike selection is required before chasis selection."}</div>
               )}
             </div>
             <div>
@@ -703,7 +709,3 @@ export default function NewSalePageClient(props: {
     </div>
   );
 }
-
-
-
-

@@ -3,7 +3,7 @@
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { databaseAction, unauthorizedAction, validationAction } from "@/lib/admin/action-helpers";
 import type { AdminActionState } from "@/lib/admin/action-state";
-import { partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockEditSchema, simpleBikeStockSchema, simpleBikeVariantStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantArchiveSchema } from "@/lib/admin/schemas";
+import { bikeChasisBackfillSchema, bikeChasisUpdateSchema, partReceiptGenerationSchema, partSaleApprovalSchema, partSaleSchema, partSchema, simpleBikeStockEditSchema, simpleBikeStockSchema, simpleBikeVariantStockSchema, stockMovementApprovalSchema, stockMovementSchema, variantArchiveSchema } from "@/lib/admin/schemas";
 import { revalidateERP, serviceRoleClient, writeActivity } from "@/lib/admin/erp-action-runtime";
 import type { Database } from "@/lib/supabase/database.types";
 
@@ -68,6 +68,44 @@ function normalizeChasisNumbers(numbers: readonly string[]): string[] {
   return Array.from(new Set(numbers.map((item) => String(item ?? "").trim().toUpperCase()).filter(Boolean)));
 }
 
+async function findChasisUsage(
+  sb: ReturnType<typeof serviceRoleClient>,
+  chasisNumbers: readonly string[],
+  options: { excludeStockUnitId?: string } = {},
+): Promise<{ error: Error | null; used: string[] }> {
+  const normalized = normalizeChasisNumbers(chasisNumbers);
+  if (normalized.length === 0) return { error: null, used: [] };
+  const wanted = new Set(normalized);
+
+  let stockQuery = sb
+    .from("motorcycle_stock_units")
+    .select("id, chasis_number")
+    .not("chasis_number", "is", null);
+  if (options.excludeStockUnitId) stockQuery = stockQuery.neq("id", options.excludeStockUnitId);
+  const stock = await stockQuery;
+  if (stock.error && stock.error.code !== "42P01" && stock.error.code !== "42703") return { error: stock.error, used: [] };
+
+  const sales = await sb
+    .from("sales")
+    .select("chasis_number, receipt_number, sale_status")
+    .not("chasis_number", "is", null);
+  if (sales.error && sales.error.code !== "42P01" && sales.error.code !== "42703") return { error: sales.error, used: [] };
+
+  const used = new Map<string, string>();
+  for (const row of (stock.data ?? []) as Array<{ id?: string | null; chasis_number?: string | null }>) {
+    const chasis = String(row.chasis_number ?? "").trim().toUpperCase();
+    if (wanted.has(chasis)) used.set(chasis, `${chasis} already exists in physical stock records`);
+  }
+  for (const row of (sales.data ?? []) as Array<{ chasis_number?: string | null; receipt_number?: string | null; sale_status?: string | null }>) {
+    const chasis = String(row.chasis_number ?? "").trim().toUpperCase();
+    if (!wanted.has(chasis)) continue;
+    const receipt = row.receipt_number ? ` in ${row.receipt_number}` : " in sale history";
+    const status = row.sale_status ? ` (${row.sale_status.replace(/_/g, " ")})` : "";
+    used.set(chasis, `${chasis} already exists${receipt}${status}`);
+  }
+  return { error: null, used: Array.from(used.values()) };
+}
+
 async function insertBikeStockUnits(
   sb: ReturnType<typeof serviceRoleClient>,
   variantId: string,
@@ -76,10 +114,10 @@ async function insertBikeStockUnits(
 ): Promise<Error | null> {
   const normalized = normalizeChasisNumbers(chasisNumbers);
   if (normalized.length === 0) return null;
-  const existing = await sb.from("motorcycle_stock_units").select("chasis_number").in("chasis_number", normalized);
-  if (existing.error && existing.error.code !== "42P01" && existing.error.code !== "42703") return existing.error;
-  if ((existing.data?.length ?? 0) > 0) {
-    return new Error(`These chasis number(s) already exist: ${existing.data?.map((row) => (row as { chasis_number?: string }).chasis_number).filter(Boolean).join(", ")}`);
+  const usage = await findChasisUsage(sb, normalized);
+  if (usage.error) return usage.error;
+  if (usage.used.length > 0) {
+    return new Error(`These chasis number(s) cannot be added: ${usage.used.join(", ")}`);
   }
   const rows: Database["public"]["Tables"]["motorcycle_stock_units"]["Insert"][] = normalized.map((chasis) => ({
     motorcycle_variant_id: variantId,
@@ -89,6 +127,32 @@ async function insertBikeStockUnits(
   }));
   const inserted = await sb.from("motorcycle_stock_units").insert(rows);
   return inserted.error ?? null;
+}
+async function archiveAvailableBikeStockUnits(
+  sb: ReturnType<typeof serviceRoleClient>,
+  variantId: string,
+  quantity: number,
+): Promise<{ error: Error | null; archivedIds: string[] }> {
+  const count = Math.max(0, Math.floor(quantity));
+  if (count === 0) return { error: null, archivedIds: [] };
+  const units = await sb
+    .from("motorcycle_stock_units")
+    .select("id, chasis_number")
+    .eq("motorcycle_variant_id", variantId)
+    .eq("status", "available")
+    .order("created_at", { ascending: true })
+    .limit(count);
+  if (units.error) return { error: units.error, archivedIds: [] };
+  const rows = (units.data ?? []) as { id: string; chasis_number?: string | null }[];
+  if (rows.length < count) {
+    return { error: new Error(`Cannot subtract ${count} bike(s): only ${rows.length} available chasis unit(s) are recorded for this variant.`), archivedIds: [] };
+  }
+  const ids = rows.map((row) => row.id);
+  const archived = await sb
+    .from("motorcycle_stock_units")
+    .update({ status: "archived" })
+    .in("id", ids);
+  return { error: archived.error ?? null, archivedIds: archived.error ? [] : ids };
 }
 // ==============================================
 // SIMPLE BIKE STOCK ENTRY (MANAGER+)
@@ -455,6 +519,7 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
   const formReason = String(raw.reason ?? "").trim();
   const formNotes = String(raw.notes ?? "").trim();
   const formQuantity = String(raw.quantity ?? "1").trim();
+  const formChasisNumbers = String(raw.chasisNumbers ?? "").trim();
 
   function combineMovement(target: string, friendly: string): string {
     const t = target === "part" ? "part" : "motorcycle";
@@ -469,6 +534,7 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
     partId: formPartId || undefined,
     quantity: formQuantity,
     unitCostAtTime: formUnitCost || undefined,
+    chasisNumbers: formChasisNumbers,
     reason: formReason,
     notes: formNotes || null,
     id: typeof raw.id === "string" && raw.id ? raw.id : undefined,
@@ -476,6 +542,18 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
 
   const parsed = stockMovementSchema.safeParse(normalized);
   if (!parsed.success) return validationAction(parsed.error);
+
+  if (parsed.data.movementType === "motorcycle_add") {
+    const usage = await findChasisUsage(serviceRoleClient(), parsed.data.chasisNumbers);
+    if (usage.error) return databaseAction("requestStockMovement chasis check", usage.error);
+    if (usage.used.length > 0) {
+      return {
+        status: "error",
+        message: `These chasis number(s) cannot be requested: ${usage.used.join(", ")}`,
+        errors: { chasisNumbers: usage.used },
+      };
+    }
+  }
 
   // ==== k3 auto-fill unit cost from DB snapshot (if manager left blank) ====
   let resolvedUnitCostAtTime: number | null = parsed.data.unitCostAtTime ?? null;
@@ -505,6 +583,7 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
     motorcycle_variant_id: parsed.data.motorcycleVariantId || null,
     part_id: parsed.data.partId || null,
     quantity: parsed.data.quantity,
+    requested_chasis_numbers: parsed.data.movementType === "motorcycle_add" ? parsed.data.chasisNumbers : [],
     unit_cost_at_time: resolvedUnitCostAtTime,
     reason: parsed.data.reason,
     notes: parsed.data.notes ?? null,
@@ -531,6 +610,7 @@ export async function requestStockMovement(_prev: AdminActionState, formData: Fo
         part_id: parsed.data.partId ?? null,
         quantity: parsed.data.quantity,
         unit_cost_at_time: resolvedUnitCostAtTime,
+        requested_chasis_numbers: parsed.data.movementType === "motorcycle_add" ? parsed.data.chasisNumbers : [],
         reason: parsed.data.reason,
       },
     });
@@ -594,6 +674,21 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
         if (variantDeltaQty < 0 && oldQty + variantDeltaQty < 0) {
           return { status: "error", message: `Cannot approve: bike stock has ${oldQty} unit(s), request subtracts ${Math.abs(variantDeltaQty)}.` };
         }
+
+        const requestedChasisNumbers = normalizeChasisNumbers(Array.isArray(m.requested_chasis_numbers) ? m.requested_chasis_numbers as string[] : []);
+        let archivedUnitIds: string[] = [];
+        if (variantDeltaQty > 0) {
+          if (requestedChasisNumbers.length !== variantDeltaQty) {
+            return { status: "error", message: `Cannot approve: this bike addition needs exactly ${variantDeltaQty} chasis number(s). Ask the requester to resubmit with the complete list.` };
+          }
+          const unitError = await insertBikeStockUnits(sbService, m.motorcycle_variant_id, requestedChasisNumbers, actor.userId);
+          if (unitError) return databaseAction("decideStockMovement chasis units", unitError);
+        } else if (variantDeltaQty < 0) {
+          const archived = await archiveAvailableBikeStockUnits(sbService, m.motorcycle_variant_id, Math.abs(variantDeltaQty));
+          if (archived.error) return databaseAction("decideStockMovement archive chasis units", archived.error);
+          archivedUnitIds = archived.archivedIds;
+        }
+
         const newQty = oldQty + variantDeltaQty;
         const newStatus: "in_stock" | "out_of_stock"
           = newQty <= 0 ? "out_of_stock" : "in_stock";
@@ -601,7 +696,15 @@ export async function decideStockMovement(_prev: AdminActionState, formData: For
           .from("motorcycle_variants")
           .update({ quantity: newQty, stock_status: newStatus })
           .eq("id", m.motorcycle_variant_id);
-        if (vErr) return databaseAction("Variant stock update", vErr);
+        if (vErr) {
+          if (variantDeltaQty > 0 && requestedChasisNumbers.length > 0) {
+            await sbService.from("motorcycle_stock_units").delete().eq("motorcycle_variant_id", m.motorcycle_variant_id).in("chasis_number", requestedChasisNumbers);
+          }
+          if (variantDeltaQty < 0 && archivedUnitIds.length > 0) {
+            await sbService.from("motorcycle_stock_units").update({ status: "available" }).in("id", archivedUnitIds);
+          }
+          return databaseAction("Variant stock update", vErr);
+        }
       }
       if (partDeltaQty !== 0 && m.part_id) {
         const cur = await sbService.from("parts").select("current_stock").eq("id", m.part_id).maybeSingle();
@@ -930,6 +1033,127 @@ export async function generatePartSaleReceipt(_prev: AdminActionState, formData:
   revalidateERP();
   return { status: "success", message: "Part receipt generated. You can print it now." };
 }
+export async function addBikeChasisUnits(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = bikeChasisBackfillSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  const variantRes = await sb
+    .from("motorcycle_variants")
+    .select("id, quantity, cc, color_name, motorcycle:motorcycles(name, brand:brands(name))")
+    .eq("id", parsed.data.variantId)
+    .maybeSingle();
+  if (variantRes.error || !variantRes.data) return { status: "error", message: "Bike variant was not found." };
+
+  const variant = variantRes.data as unknown as {
+    id: string;
+    quantity?: number | null;
+    cc?: number | null;
+    color_name?: string | null;
+    motorcycle?: { name?: string | null; brand?: { name?: string | null } | null } | null;
+  };
+  const existing = await sb
+    .from("motorcycle_stock_units")
+    .select("id, status")
+    .eq("motorcycle_variant_id", parsed.data.variantId)
+    .in("status", ["available", "reserved"]);
+  if (existing.error) return databaseAction("addBikeChasisUnits existing", existing.error);
+
+  const currentQty = Number(variant.quantity ?? 0);
+  const recordedLiveUnits = existing.data?.length ?? 0;
+  const missingUnits = Math.max(0, currentQty - recordedLiveUnits);
+  if (missingUnits <= 0) {
+    return { status: "error", message: "This bike row already has chasis records for its current stock quantity." };
+  }
+  if (parsed.data.chasisNumbers.length > missingUnits) {
+    return {
+      status: "error",
+      message: `Only ${missingUnits} chasis number(s) can be added here because current stock is ${currentQty} and ${recordedLiveUnits} live unit(s) are already recorded.`,
+      errors: { chasisNumbers: [`Enter ${missingUnits} or fewer chasis number(s).`] },
+    };
+  }
+
+  const unitError = await insertBikeStockUnits(sb, parsed.data.variantId, parsed.data.chasisNumbers, actor.userId);
+  if (unitError) return databaseAction("addBikeChasisUnits insert", unitError);
+
+  const label = formatBikeStockLabel(variant.motorcycle?.brand?.name ?? "Bike", variant.motorcycle?.name ?? "variant", variant.cc, variant.color_name);
+  try {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "stock_applied",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} added ${parsed.data.chasisNumbers.length} chasis record(s) to ${label}.`,
+      targetTable: "motorcycle_stock_units",
+      targetId: parsed.data.variantId,
+      metadata: {
+        event: "bike_chasis_units_backfilled",
+        motorcycle_variant_id: parsed.data.variantId,
+        chasis_numbers: parsed.data.chasisNumbers,
+        current_quantity: currentQty,
+        recorded_live_units: recordedLiveUnits,
+      },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: `${parsed.data.chasisNumbers.length} chasis number(s) added to ${label}.` };
+}
+export async function updateBikeChasisUnit(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
+
+  const parsed = bikeChasisUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return validationAction(parsed.error);
+
+  const sb = serviceRoleClient();
+  const currentRes = await sb
+    .from("motorcycle_stock_units")
+    .select("id, motorcycle_variant_id, chasis_number, status, sale_id")
+    .eq("id", parsed.data.unitId)
+    .maybeSingle();
+  if (currentRes.error || !currentRes.data) return { status: "error", message: "Chasis record was not found." };
+
+  const current = currentRes.data as { id: string; motorcycle_variant_id: string; chasis_number?: string | null; status: string; sale_id?: string | null };
+  if (current.status !== "available" || current.sale_id) {
+    return { status: "error", message: "Only available, unsold chasis records can be corrected." };
+  }
+
+  const nextChasis = parsed.data.chasisNumber.trim().toUpperCase();
+  const oldChasis = String(current.chasis_number ?? "").trim().toUpperCase();
+  if (nextChasis === oldChasis) return { status: "success", message: "Chasis number is unchanged." };
+
+  const usage = await findChasisUsage(sb, [nextChasis], { excludeStockUnitId: current.id });
+  if (usage.error) return databaseAction("updateBikeChasisUnit duplicate check", usage.error);
+  if (usage.used.length > 0) {
+    return { status: "error", message: usage.used.join(", "), errors: { chasisNumber: usage.used } };
+  }
+
+  const updated = await sb
+    .from("motorcycle_stock_units")
+    .update({ chasis_number: nextChasis })
+    .eq("id", current.id)
+    .eq("status", "available")
+    .is("sale_id", null);
+  if (updated.error) return databaseAction("updateBikeChasisUnit update", updated.error);
+
+  try {
+    await writeActivity({
+      actorUserId: actor.userId,
+      actorRole: actor.profile.role,
+      action: "stock_applied",
+      summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} corrected chasis ${oldChasis} to ${nextChasis}.`,
+      targetTable: "motorcycle_stock_units",
+      targetId: current.id,
+      metadata: { event: "bike_chasis_corrected", old_chasis_number: oldChasis, new_chasis_number: nextChasis, motorcycle_variant_id: current.motorcycle_variant_id },
+    });
+  } catch { /* noop */ }
+
+  revalidateERP();
+  return { status: "success", message: `Chasis corrected to ${nextChasis}.` };
+}
 export async function archiveMotorcycleVariant(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const actor = await getAuthenticatedProfile();
   if (!actor || !["manager", "admin", "developer"].includes(actor.profile.role)) return unauthorizedAction;
@@ -982,6 +1206,3 @@ export async function archiveMotorcycleVariant(_prev: AdminActionState, formData
   return { status: "success", message: restore ? "Bike restored to stock workflows." : "Bike archived and hidden from stock workflows." };
 }
 // ==============================================
-
-
-

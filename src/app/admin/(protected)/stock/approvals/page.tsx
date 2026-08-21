@@ -41,7 +41,7 @@ export default async function StockApprovalsPage() {
         pending.map((m) => {
           const { label: movementLabel, tone: movementTone } = formatMovementType(String(m.movement_type));
           const titleDetail = m.part
-            ? `${m.part.sku ? `${m.part.sku} — ` : ""}${m.part.name ?? ""}`
+            ? `${m.part.sku ? `${m.part.sku} - ` : ""}${m.part.name ?? ""}`
             : m.variant
             ? `${m.variant.cc ?? ""}cc ${m.variant.color_name ?? ""} ${m.variant.motorcycle?.name ?? ""}`.trim()
             : "";
@@ -55,10 +55,11 @@ export default async function StockApprovalsPage() {
             : m.part
             ? Number(m.part.current_stock ?? 0)
             : 0;
+          const requestedChasisNumbers = Array.isArray(m.requested_chasis_numbers) ? m.requested_chasis_numbers.map((item) => String(item)).filter(Boolean) : [];
           return (
             <AdminPanel
               key={m.id}
-              title={`${movementLabel} × ${m.quantity}${titleDetail ? ` — ${titleDetail}` : ""}`}
+              title={`${movementLabel} x ${m.quantity}${titleDetail ? ` - ${titleDetail}` : ""}`}
               description={`Requested on ${new Date(m.created_at).toLocaleString()}${m.requested_by_profile?.full_name ? ` by ${m.requested_by_profile.full_name} (${m.requested_by_profile.role})` : m.requestor?.full_name ? ` by ${m.requestor.full_name} (${m.requestor.role})` : ""}`}
               actions={<StatusBadge value="new" label="Pending" />}
             >
@@ -79,7 +80,7 @@ export default async function StockApprovalsPage() {
                     </div>
                     <div>
                       <p className="text-[11px] uppercase tracking-widest text-[#6B7280]">Quantity</p>
-                      <p className="mt-1 font-display text-2xl font-bold text-[#111111]">× {m.quantity}</p>
+                      <p className="mt-1 font-display text-2xl font-bold text-[#111111]">x {m.quantity}</p>
                     </div>
                     <div>
                       <p className="text-[11px] uppercase tracking-widest text-[#6B7280]">Current stock (before)</p>
@@ -96,15 +97,25 @@ export default async function StockApprovalsPage() {
                         </p>
                       </div>
                     ) : null}
+                    {requestedChasisNumbers.length > 0 ? (
+                      <div className="col-span-2">
+                        <p className="text-[11px] uppercase tracking-widest text-[#6B7280]">Chasis numbers to add</p>
+                        <div className="mt-2 flex flex-wrap gap-2 rounded-md border border-blue-100 bg-blue-50 p-3">
+                          {requestedChasisNumbers.map((chasis) => (
+                            <span key={chasis} className="rounded-full border border-blue-200 bg-white px-3 py-1 font-mono text-xs font-bold text-blue-700">{chasis}</span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="col-span-2">
                       <p className="text-[11px] uppercase tracking-widest text-[#6B7280]">Manager reason</p>
-                      <p className="mt-1 rounded-md bg-[#F7F7F8] p-3 text-sm leading-6 text-[#111111]">{m.reason || "—"}</p>
+                      <p className="mt-1 rounded-md bg-[#F7F7F8] p-3 text-sm leading-6 text-[#111111]">{m.reason || "-"}</p>
                     </div>
                   </dl>
                 </div>
               </div>
               <div className="mt-8 flex flex-col-reverse gap-4 border-t border-[#E5E7EB] pt-6 sm:flex-row sm:items-start sm:justify-between">
-                <AdminForm action={decideStockMovement} destructive confirmMessage="Reject this stock change? No inventory updates occur." className="contents" hideAutoSubmit={true} submitLabel="" pendingLabel="Rejecting…">
+                <AdminForm action={decideStockMovement} destructive confirmMessage="Reject this stock change? No inventory updates occur." className="contents" hideAutoSubmit={true} submitLabel="" pendingLabel="Rejecting...">
                   <input type="hidden" name="movementId" value={m.id} />
                   <input type="hidden" name="decision" value="rejected" />
                   <div className="w-full max-w-md sm:max-w-xs">
@@ -118,7 +129,7 @@ export default async function StockApprovalsPage() {
                 <AdminForm
                   action={decideStockMovement}
                   confirmMessage="Approve and apply this stock change? Actual live inventory is updated."
-                  pendingLabel="Approving…"
+                  pendingLabel="Approving..."
                   className="contents"
                   hideAutoSubmit={true}
                   submitLabel=""
@@ -138,4 +149,3 @@ export default async function StockApprovalsPage() {
     </div>
   );
 }
-

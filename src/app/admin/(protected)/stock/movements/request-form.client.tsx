@@ -55,10 +55,16 @@ export function StockMovementRequestForm({ variants, parts, isAdminOrDev }: Prop
   const [partBikeFilter, setPartBikeFilter] = useState("");
   const [partId, setPartId] = useState("");
   const [partSearch, setPartSearch] = useState("");
+  const [movementType, setMovementType] = useState<"addition" | "subtraction">("addition");
+  const [quantity, setQuantity] = useState(1);
+  const [chasisNumbers, setChasisNumbers] = useState("");
 
   const selectedVariant = variants.find((variant) => variant.id === variantId) ?? null;
   const selectedPartBike = variants.find((variant) => variant.id === partBikeFilter) ?? null;
   const selectedPart = parts.find((part) => part.id === partId) ?? null;
+  const chasisList = useMemo(() => chasisNumbers.split(/[\r\n,]+/).map((item) => item.trim().toUpperCase()).filter(Boolean), [chasisNumbers]);
+  const chasisUniqueCount = useMemo(() => new Set(chasisList).size, [chasisList]);
+  const requiresChasisNumbers = targetType === "variant" && movementType === "addition";
 
   const modelOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -136,14 +142,14 @@ export function StockMovementRequestForm({ variants, parts, isAdminOrDev }: Prop
       <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         <div>
           <label className={adminLabelClass}>Movement type</label>
-          <select name="movementType" defaultValue="addition" className={adminInputClass}>
+          <select name="movementType" value={movementType} onChange={(event) => setMovementType(event.target.value === "subtraction" ? "subtraction" : "addition")} className={adminInputClass}>
             <option value="addition">Addition (+)</option>
             <option value="subtraction">Subtraction (-)</option>
           </select>
         </div>
         <div>
           <label className={adminLabelClass}>Quantity</label>
-          <input name="quantity" type="number" min={1} required defaultValue={1} className={adminInputClass} />
+          <input name="quantity" type="number" min={1} required value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))} className={adminInputClass} />
         </div>
         <div>
           <label className={adminLabelClass}>Unit cost, PKR{isAdminOrDev ? "" : " (auto-filled)"}</label>
@@ -180,6 +186,32 @@ export function StockMovementRequestForm({ variants, parts, isAdminOrDev }: Prop
               );
             })}
           </div>
+          {requiresChasisNumbers ? (
+            <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <label className={adminLabelClass}>Chasis numbers for added bikes</label>
+                  <p className="mt-1 text-xs text-[#4B5563]">Enter one chasis number per bike. Commas or new lines both work.</p>
+                </div>
+                <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-bold ${chasisList.length === quantity && chasisUniqueCount === chasisList.length ? "border-green-200 bg-green-50 text-[#15803D]" : "border-amber-200 bg-amber-50 text-[#B45309]"}`}>
+                  {chasisList.length} / {quantity} recorded
+                </span>
+              </div>
+              <textarea
+                name="chasisNumbers"
+                required={requiresChasisNumbers}
+                value={chasisNumbers}
+                onChange={(event) => setChasisNumbers(event.target.value)}
+                className={`${adminInputClass} mt-3 min-h-[112px] bg-white font-mono text-sm`}
+                placeholder={Array.from({ length: Math.min(quantity, 6) }, (_, index) => `CHASIS-${index + 1}`).join("\n")}
+              />
+              {chasisUniqueCount !== chasisList.length ? (
+                <p className="mt-2 text-xs font-semibold text-[#C62828]">Remove duplicate chasis numbers before submitting.</p>
+              ) : null}
+            </div>
+          ) : (
+            <input type="hidden" name="chasisNumbers" value="" />
+          )}
         </section>
       ) : (
         <section className="rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] p-4">

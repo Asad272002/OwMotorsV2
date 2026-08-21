@@ -3,8 +3,9 @@ import { Bike, Layers, PackagePlus, Palette } from "lucide-react";
 import { createBikeStockVariant, createSimpleBikeStock } from "@/app/admin/erp-actions/stock";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { AdminEmptyState, AdminPageHeader, AdminPanel, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
-import { listStockBrands, listStockMotorcycleModels } from "@/lib/erp/queries";
+import { listMotorcycleStockUnitsForStock, listSaleHistoryChasisNumbers, listStockBrands, listStockMotorcycleModels } from "@/lib/erp/queries";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
+import { ChasisFields } from "./chasis-fields.client";
 
 export const metadata = { title: "Add Bike Stock" };
 
@@ -12,7 +13,8 @@ export default async function AddBikeStockPage() {
   const actor = await getAuthenticatedProfile();
   const role = actor?.profile.role ?? "apprentice";
   const allowed = ["developer", "admin", "manager"].includes(role);
-  const [brands, models] = allowed ? await Promise.all([listStockBrands(), listStockMotorcycleModels()]) : [[], []];
+  const [brands, models, stockUnits, saleHistoryChasisNumbers] = allowed ? await Promise.all([listStockBrands(), listStockMotorcycleModels(), listMotorcycleStockUnitsForStock(), listSaleHistoryChasisNumbers()]) : [[], [], [], []];
+  const existingChasisNumbers = Array.from(new Set([...(stockUnits as readonly { chasis_number?: string | null }[]).map((unit) => unit.chasis_number ?? ""), ...(saleHistoryChasisNumbers as string[])].map((item) => String(item).trim().toUpperCase()).filter(Boolean)));
 
   if (!allowed) {
     return <AdminEmptyState title="Not available" description="Your role can check stock, but cannot add bike stock records." action={<Link href="/admin/stock/availability" className="ow-button-primary">Back to stock</Link>} />;
@@ -65,15 +67,7 @@ export default async function AddBikeStockPage() {
                 <label className={adminLabelClass}>Sale price, PKR</label>
                 <input name="price" required type="number" min={0} step="1" className={adminInputClass} placeholder="285000" />
               </div>
-                            <div>
-                <label className={adminLabelClass}>Opening quantity</label>
-                <input name="quantity" required type="number" min={1} step="1" defaultValue={1} className={adminInputClass} />
-              </div>
-              <div className="md:col-span-2">
-                <label className={adminLabelClass}>Chasis numbers</label>
-                <textarea name="chasisNumbers" required className={adminInputClass + " min-h-28 py-3 font-mono"} placeholder="One chasis number per bike, one per line" />
-                <p className="mt-1 text-xs text-[#6B7280]">Quantity and chasis count must match.</p>
-              </div>
+                            <ChasisFields existingChasisNumbers={existingChasisNumbers} />
               <div className="flex items-end rounded-md border border-[#E5E7EB] bg-[#F7F7F8] p-4 text-sm text-[#6B7280]">
                 <div className="flex items-start gap-3">
                   <PackagePlus aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-[#C62828]" />
@@ -117,15 +111,7 @@ export default async function AddBikeStockPage() {
                     <label className={adminLabelClass}>Sale price, PKR</label>
                     <input name="price" required type="number" min={0} step="1" className={adminInputClass} placeholder="285000" />
                   </div>
-                                    <div>
-                    <label className={adminLabelClass}>Opening quantity</label>
-                    <input name="quantity" required type="number" min={1} step="1" defaultValue={1} className={adminInputClass} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className={adminLabelClass}>Chasis numbers</label>
-                    <textarea name="chasisNumbers" required className={adminInputClass + " min-h-28 py-3 font-mono"} placeholder="One chasis number per bike, one per line" />
-                    <p className="mt-1 text-xs text-[#6B7280]">Quantity and chasis count must match.</p>
-                  </div>
+                                    <ChasisFields existingChasisNumbers={existingChasisNumbers} />
                   <div className="flex items-end rounded-md border border-[#E5E7EB] bg-[#F7F7F8] p-4 text-sm text-[#6B7280]">
                     <div className="flex items-start gap-3">
                       <Palette aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-[#C62828]" />

@@ -342,13 +342,45 @@ export const listMotorcycleVariantsForSale = cache(async (): Promise<readonly {
       motorcycle:motorcycles(id, name, slug, publication_status, brand:brands(id, name, slug))
     `)
     .eq("is_active", true)
-    .eq("motorcycle.publication_status", "published")
     .eq("motorcycle.brand.is_active", true)
     .order("cc", { ascending: true });
   type Row = Record<string, unknown>;
   return (data ?? []).filter((r: Row) => !!r.motorcycle);
 });
+
+export const listSaleHistoryChasisNumbers = cache(async (): Promise<readonly string[]> => {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return [];
+  const sb = privileged();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("sales")
+    .select("chasis_number")
+    .not("chasis_number", "is", null);
+  if (error) return [];
+  return Array.from(new Set(((data ?? []) as Array<{ chasis_number?: string | null }>)
+    .map((row) => String(row.chasis_number ?? "").trim().toUpperCase())
+    .filter(Boolean)));
+});
 export const listMotorcycleStockUnitsForSale = cache(async (): Promise<readonly MotorcycleStockUnit[]> => {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return [];
+  const sb = privileged();
+  if (!sb) return [];
+  const [{ data, error }, saleChasisNumbers] = await Promise.all([
+    sb
+      .from("motorcycle_stock_units")
+      .select("id, motorcycle_variant_id, chasis_number, status, sale_id, added_by, sold_at, created_at, updated_at")
+      .eq("status", "available")
+      .order("chasis_number", { ascending: true }),
+    listSaleHistoryChasisNumbers(),
+  ]);
+  if (error) return [];
+  const usedInSales = new Set(saleChasisNumbers.map((chasis) => chasis.toUpperCase()));
+  return (((data as MotorcycleStockUnit[]) ?? [])).filter((unit) => !usedInSales.has(String(unit.chasis_number ?? "").trim().toUpperCase()));
+});
+
+export const listMotorcycleStockUnitsForStock = cache(async (): Promise<readonly MotorcycleStockUnit[]> => {
   const actor = await getAuthenticatedProfile();
   if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return [];
   const sb = privileged();
@@ -356,12 +388,11 @@ export const listMotorcycleStockUnitsForSale = cache(async (): Promise<readonly 
   const { data, error } = await sb
     .from("motorcycle_stock_units")
     .select("id, motorcycle_variant_id, chasis_number, status, sale_id, added_by, sold_at, created_at, updated_at")
-    .eq("status", "available")
+    .order("status", { ascending: true })
     .order("chasis_number", { ascending: true });
   if (error) return [];
   return (data as MotorcycleStockUnit[]) ?? [];
 });
-
 type StockVariantRow = {
   id: string;
   motorcycle_id: string;
@@ -820,7 +851,3 @@ export async function getMyRole(): Promise<StaffRole | null> {
     .from("profiles").select("role").eq("id", userId).maybeSingle();
   return (profile?.role as StaffRole) ?? null;
 }
-
-
-
-
