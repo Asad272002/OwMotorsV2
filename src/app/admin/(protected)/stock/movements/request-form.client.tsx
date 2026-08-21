@@ -57,14 +57,29 @@ export function StockMovementRequestForm({ variants, parts, isAdminOrDev }: Prop
   const [partSearch, setPartSearch] = useState("");
   const [movementType, setMovementType] = useState<"addition" | "subtraction">("addition");
   const [quantity, setQuantity] = useState(1);
-  const [chasisNumbers, setChasisNumbers] = useState("");
+  const [chasisNumbers, setChasisNumbers] = useState<string[]>([""]);
 
   const selectedVariant = variants.find((variant) => variant.id === variantId) ?? null;
   const selectedPartBike = variants.find((variant) => variant.id === partBikeFilter) ?? null;
   const selectedPart = parts.find((part) => part.id === partId) ?? null;
-  const chasisList = useMemo(() => chasisNumbers.split(/[\r\n,]+/).map((item) => item.trim().toUpperCase()).filter(Boolean), [chasisNumbers]);
+  const chasisList = useMemo(() => chasisNumbers.map((item) => item.trim().toUpperCase()).filter(Boolean), [chasisNumbers]);
   const chasisUniqueCount = useMemo(() => new Set(chasisList).size, [chasisList]);
   const requiresChasisNumbers = targetType === "variant" && movementType === "addition";
+  const chasisNumbersSerialized = chasisList.join("\n");
+
+  function setQuantityAndChasis(nextQuantity: number) {
+    const safeQuantity = Math.max(1, nextQuantity || 1);
+    setQuantity(safeQuantity);
+    setChasisNumbers((prev) => Array.from({ length: safeQuantity }, (_, index) => prev[index] ?? ""));
+  }
+
+  function updateChasisAt(index: number, value: string) {
+    setChasisNumbers((prev) => {
+      const next = Array.from({ length: quantity }, (_, i) => prev[i] ?? "");
+      next[index] = value.toUpperCase();
+      return next;
+    });
+  }
 
   const modelOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -149,7 +164,7 @@ export function StockMovementRequestForm({ variants, parts, isAdminOrDev }: Prop
         </div>
         <div>
           <label className={adminLabelClass}>Quantity</label>
-          <input name="quantity" type="number" min={1} required value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))} className={adminInputClass} />
+          <input name="quantity" type="number" min={1} required value={quantity} onChange={(event) => setQuantityAndChasis(Number(event.target.value))} className={adminInputClass} />
         </div>
         <div>
           <label className={adminLabelClass}>Unit cost, PKR{isAdminOrDev ? "" : " (auto-filled)"}</label>
@@ -191,22 +206,37 @@ export function StockMovementRequestForm({ variants, parts, isAdminOrDev }: Prop
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <label className={adminLabelClass}>Chasis numbers for added bikes</label>
-                  <p className="mt-1 text-xs text-[#4B5563]">Enter one chasis number per bike. Commas or new lines both work.</p>
+                  <p className="mt-1 text-xs text-[#4B5563]">One separate field per physical bike. The server checks duplicates before approval.</p>
                 </div>
                 <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-bold ${chasisList.length === quantity && chasisUniqueCount === chasisList.length ? "border-green-200 bg-green-50 text-[#15803D]" : "border-amber-200 bg-amber-50 text-[#B45309]"}`}>
                   {chasisList.length} / {quantity} recorded
                 </span>
               </div>
-              <textarea
-                name="chasisNumbers"
-                required={requiresChasisNumbers}
-                value={chasisNumbers}
-                onChange={(event) => setChasisNumbers(event.target.value)}
-                className={`${adminInputClass} mt-3 min-h-[112px] bg-white font-mono text-sm`}
-                placeholder={Array.from({ length: Math.min(quantity, 6) }, (_, index) => `CHASIS-${index + 1}`).join("\n")}
-              />
+              <input type="hidden" name="chasisNumbers" value={chasisNumbersSerialized} />
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {Array.from({ length: quantity }, (_, index) => {
+                  const value = chasisNumbers[index] ?? "";
+                  const normalized = value.trim().toUpperCase();
+                  const duplicate = normalized.length > 0 && chasisNumbers.filter((item) => item.trim().toUpperCase() === normalized).length > 1;
+                  return (
+                    <label key={`stock-chasis-${index}`} className={adminLabelClass}>
+                      Chasis {index + 1}
+                      <input
+                        required={requiresChasisNumbers}
+                        value={value}
+                        onChange={(event) => updateChasisAt(index, event.target.value)}
+                        className={`${adminInputClass} mt-1 bg-white font-mono text-sm uppercase ${duplicate ? "border-[#C62828] ring-2 ring-[#C62828]/30" : ""}`}
+                        placeholder={`CHASIS-${index + 1}`}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
               {chasisUniqueCount !== chasisList.length ? (
                 <p className="mt-2 text-xs font-semibold text-[#C62828]">Remove duplicate chasis numbers before submitting.</p>
+              ) : null}
+              {chasisList.length !== quantity ? (
+                <p className="mt-2 text-xs font-semibold text-[#B45309]">Fill all {quantity} chasis field(s) before submitting this bike addition.</p>
               ) : null}
             </div>
           ) : (

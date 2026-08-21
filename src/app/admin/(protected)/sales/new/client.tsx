@@ -142,7 +142,6 @@ export default function NewSalePageClient(props: {
   const [variantId, setVariantId] = useState<string>("");
   const [selectedStockUnitId, setSelectedStockUnitId] = useState("");
   const [chasisSearch, setChasisSearch] = useState("");
-  const [quantity, setQuantity] = useState<number>(1);
   const [saleNotes, setSaleNotes] = useState("");
 
   const [newCustomer, setNewCustomer] = useState({
@@ -182,7 +181,8 @@ export default function NewSalePageClient(props: {
   }, [bikeFilter, stockUnitsByVariant, variants]);
 
   const chosen = useMemo(() => variants.find(v => v.id === variantId) ?? null, [variantId, variants]);
-  const totalAmount = (chosen?.price ?? 0) * quantity;
+  const saleQuantity = 1;
+  const totalAmount = (chosen?.price ?? 0) * saleQuantity;
   const paidAmount = payments.reduce((t, p) => t + (Number(p.amount.replace(/[^0-9]/g, "")) || 0), 0);
   const dueAmount = totalAmount - paidAmount;
   const paymentMismatch = totalAmount > 0 && paidAmount > 0 && dueAmount !== 0;
@@ -213,7 +213,7 @@ export default function NewSalePageClient(props: {
   const chasisReady = Boolean(selectedStockUnit && selectedStockUnit.motorcycle_variant_id === variantId && selectedStockUnit.status === "available");
   const hasNewCustomerIdentity = newCustomer.fullName.trim().length >= 2 && newCustomer.cnic.replace(/\D/g, "").length === 13;
   const customerStepComplete = createNewCustomer ? hasNewCustomerIdentity : Boolean(selectedCustomer);
-  const bikeStepComplete = Boolean(chosen && chasisReady && quantity > 0 && (chosen.quantity ?? 0) >= quantity);
+  const bikeStepComplete = Boolean(chosen && chasisReady && (chosen.quantity ?? 0) >= 1);
   const saleInfoStepComplete = bikeStepComplete && customerStepComplete;
   const paymentRowsComplete = payments.every(p => {
     const needBank = paymentMethods.find(m => m.value === p.payment_method as typeof paymentMethods[number]["value"])?.bank_required;
@@ -257,7 +257,6 @@ export default function NewSalePageClient(props: {
   function chooseVariant(nextVariantId: string) {
     if (nextVariantId === variantId) return;
     setVariantId(nextVariantId);
-    setQuantity(1);
     setSelectedStockUnitId("");
     setChasisSearch("");
     setFormErrors((prev) => ({
@@ -455,12 +454,12 @@ export default function NewSalePageClient(props: {
             </div>
             <div>
               <label htmlFor="newSale-quantitySold" className={adminLabelClass}>Quantity</label>
-              <input id="newSale-quantitySold" data-error-path="quantitySold" name="quantitySold" form="main-sale-form" type="number" min={1} max={chosen?.quantity ?? 99} value={Number.isFinite(quantity) ? quantity : 1} onChange={e => setQuantity(Math.min(chosen?.quantity ?? 1, Math.max(1, Number(e.target.value) || 1)))} className={`${adminInputClass} ${hasErr("quantitySold") ? ERROR_INPUT_RING : ""}`} />
-              {hasErr("quantitySold") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("quantitySold")}</p> : chosen && (chosen.quantity ?? 0) < quantity ? <p className="mt-1 text-xs font-semibold text-[#C62828]">Only {chosen.quantity ?? 0} unit(s) available.</p> : null}
+              <input id="newSale-quantitySold" data-error-path="quantitySold" name="quantitySold" form="main-sale-form" type="number" min={1} max={1} value={1} readOnly className={`${adminInputClass} bg-[#F7F7F8] text-[#6B7280] ${hasErr("quantitySold") ? ERROR_INPUT_RING : ""}`} />
+              {hasErr("quantitySold") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("quantitySold")}</p> : <p className="mt-1 text-xs text-[#6B7280]">One bike sale = one selected physical chasis. Create another sale for another chasis.</p>}
             </div>
             <div>
               <label className={adminLabelClass}>Sale total (auto)</label>
-              <div className={`${adminInputClass} flex items-center justify-between font-display text-xl font-bold text-[#C62828]`}>{pkr(totalAmount)}<span className="text-xs font-normal text-[#6B7280]">{chosen ? `${chosen.price?.toLocaleString("en-PK")} x ${quantity}` : "Pick a bike"}</span></div>
+              <div className={`${adminInputClass} flex items-center justify-between font-display text-xl font-bold text-[#C62828]`}>{pkr(totalAmount)}<span className="text-xs font-normal text-[#6B7280]">{chosen ? `${chosen.price?.toLocaleString("en-PK")} x ${saleQuantity}` : "Pick a bike"}</span></div>
               {hasErr("motorcycleVariantId") ? <p className="mt-1 text-xs font-semibold text-[#C62828]">{errText("motorcycleVariantId")}</p> : null}
             </div>
           </div>
@@ -678,7 +677,7 @@ export default function NewSalePageClient(props: {
           <input type="hidden" name="motorcycleStockUnitId" value={selectedStockUnitId ?? ""} />
           <input type="hidden" name="chasisNumber" value={chasisNumber ?? ""} />
           <input type="hidden" name="engineNumber" value="" />
-          <input type="hidden" name="quantitySold" value={String(Number.isFinite(quantity) ? quantity : 1)} />
+          <input type="hidden" name="quantitySold" value="1" />
           <input type="hidden" name="notes" value={saleNotes ?? ""} />
           <input type="hidden" name="unitPrice" value={String(chosen?.price ?? 0)} />
           <input type="hidden" name="discountAmount" value="0" />

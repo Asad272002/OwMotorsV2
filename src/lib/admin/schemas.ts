@@ -411,7 +411,7 @@ export const saleInitiateSchema = z.object({
       const n = typeof val === "string" ? Number(val.replace(/[^0-9]/g, "")) : Number(val ?? 0);
       return Number.isFinite(n) && n >= 1 ? n : 1;
     },
-    z.number().int().min(1).default(1)
+    z.number().int().min(1).max(1, "Create one sale per physical bike chasis.").default(1)
   ),
   unitPrice: z.preprocess(
     (val) => {
