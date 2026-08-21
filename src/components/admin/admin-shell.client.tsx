@@ -141,6 +141,14 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function actionCountLabel(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+function groupActionCount(group: NavGroup, actionCounts: ActionCounts): number {
+  return group.items.reduce((total, item) => total + (item.badgeKey ? actionCounts[item.badgeKey] ?? 0 : 0), 0);
+}
+
 function SidebarContent({
   pathname,
   openGroups,
@@ -161,6 +169,7 @@ function SidebarContent({
       {groups.map((group) => {
         const open = openGroups.has(group.id);
         const groupContainsActive = group.items.some((item) => isActivePath(pathname, item.href));
+        const groupCount = groupActionCount(group, actionCounts);
         return (
           <section key={group.id} className="mb-4 border-t border-[#F1F2F4] pt-3 first:border-t-0 first:pt-0" aria-labelledby={`admin-nav-${group.id}`}>
             <button
@@ -174,7 +183,10 @@ function SidebarContent({
               }`}
             >
               <span>{group.label}</span>
-              <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+              <span className="ml-auto flex items-center gap-2">
+                {groupCount > 0 ? <span className="admin-notification-badge" aria-label={`${groupCount} actions required in ${group.label}`}>{actionCountLabel(groupCount)}</span> : null}
+                <ChevronDown aria-hidden="true" className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+              </span>
             </button>
             {open ? (
               <ul id={`admin-nav-items-${group.id}`} className="mt-1 space-y-1 pl-1">
@@ -196,7 +208,7 @@ function SidebarContent({
                       >
                         <Icon aria-hidden="true" className={`h-[18px] w-[18px] shrink-0 ${active ? "text-[#C62828]" : "text-[#6B7280] group-hover:text-[#111111]"}`} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        {count > 0 ? <span className="admin-notification-badge ml-auto" aria-label={`${count} actions required`}>{count > 99 ? "99+" : count}</span> : null}
+                        {count > 0 ? <span className="admin-notification-badge ml-auto" aria-label={`${count} actions required`}>{actionCountLabel(count)}</span> : null}
                       </Link>
                     </li>
                   );
@@ -299,6 +311,99 @@ function CommandPalette({ onClose, groups }: Readonly<{ onClose: () => void; gro
   );
 }
 
+function NotificationBell({ actionCounts }: Readonly<{ actionCounts: ActionCounts }>) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const items = [
+    {
+      key: "sales",
+      label: "Sales approvals",
+      description: "Bike and spare-part sale requests waiting for approval.",
+      count: actionCounts.salesApprovals,
+      href: "/admin/sales/approvals",
+      icon: FilePenLine,
+    },
+    {
+      key: "stock",
+      label: "Stock approvals",
+      description: "Inventory addition/subtraction requests waiting for approval.",
+      count: actionCounts.stockApprovals,
+      href: "/admin/stock/approvals",
+      icon: History,
+    },
+  ];
+
+  useEffect(() => {
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative" onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={`${actionCounts.total} actions require attention`}
+        className={`relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border bg-white shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors ${open ? "border-[#C62828]/50 bg-[#FEF2F2] text-[#C62828]" : "border-[#E5E7EB] text-[#6B7280] hover:border-[#C62828]/40 hover:bg-[#FEF2F2] hover:text-[#C62828]"}`}
+      >
+        <Bell aria-hidden="true" className="h-5 w-5" />
+        {actionCounts.total > 0 ? <span className="admin-notification-badge absolute -right-1 -top-1">{actionCountLabel(actionCounts.total)}</span> : null}
+      </button>
+      {open ? (
+        <section role="dialog" aria-label="Admin notifications" className="absolute right-0 top-[calc(100%+0.65rem)] z-50 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-2xl">
+          <div className="border-b border-[#E5E7EB] bg-[#FAFAFA] px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-[#111111]">Notifications</p>
+                <p className="mt-0.5 text-xs text-[#6B7280]">Approval actions that need attention.</p>
+              </div>
+              <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${actionCounts.total > 0 ? "border-[#FECACA] bg-[#FEF2F2] text-[#C62828]" : "border-green-200 bg-green-50 text-[#15803D]"}`}>{actionCounts.total}</span>
+            </div>
+          </div>
+          <div className="p-2">
+            {items.map((item) => {
+              const Icon = item.icon;
+              const active = item.count > 0;
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${active ? "border-[#FECACA] bg-[#FFF7F7] hover:bg-[#FEF2F2]" : "border-[#E5E7EB] bg-white hover:bg-[#FAFAFA]"}`}
+                >
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${active ? "bg-[#C62828] text-white" : "bg-green-50 text-[#15803D]"}`}>
+                    <Icon aria-hidden="true" className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-2">
+                      <strong className="truncate text-sm text-[#111111]">{item.label}</strong>
+                      {active ? <span className="admin-notification-badge shrink-0">{actionCountLabel(item.count)}</span> : <span className="text-xs font-semibold text-[#15803D]">Clear</span>}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-[#6B7280]">{active ? item.description : "No pending actions here."}</span>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+          <div className="border-t border-[#E5E7EB] bg-white px-4 py-3">
+            {actionCounts.total > 0 ? (
+              <Link href={actionCounts.salesApprovals > 0 ? "/admin/sales/approvals" : "/admin/stock/approvals"} onClick={() => setOpen(false)} className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-[#C62828] bg-[#C62828] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#A91F1F]">
+                Review required actions
+              </Link>
+            ) : (
+              <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-center text-sm font-semibold text-[#15803D]">All caught up.</p>
+            )}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
 function UserMenu({ name, role }: Readonly<{ name: string; role: string }>) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -415,7 +520,7 @@ export function AdminShell({ children, actorName, actorRole, actionCounts }: Rea
           <button type="button" onClick={() => setSearchOpen(true)} className="flex h-12 min-w-0 flex-1 items-center gap-3 rounded-lg border border-[#E5E7EB] bg-[#F7F7F8] px-4 text-left text-sm text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.03)] transition-colors hover:border-[#C62828]/50 hover:bg-white sm:max-w-2xl" aria-label="Search admin dashboard">
             <Search aria-hidden="true" className="h-[18px] w-[18px] shrink-0" /><span className="truncate">Search sales, stock, customers</span><span className="ml-auto hidden items-center gap-1 rounded-md border border-[#D1D5DB] bg-white px-2 py-1 text-[10px] font-bold text-[#6B7280] sm:inline-flex"><Command aria-hidden="true" className="h-3 w-3" />K</span>
           </button>
-          <Link href="/admin#attention" className="relative inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#6B7280] shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-colors hover:border-[#C62828]/40 hover:bg-[#FEF2F2] hover:text-[#C62828]" aria-label={`${actionCounts.total} actions require attention`}><Bell aria-hidden="true" className="h-5 w-5" />{actionCounts.total > 0 ? <span className="admin-notification-badge absolute -right-1 -top-1">{actionCounts.total > 99 ? "99+" : actionCounts.total}</span> : null}<span className="sr-only">Attention summary</span></Link>
+          <NotificationBell actionCounts={actionCounts} />
           <UserMenu name={actorName} role={actorRole} />
         </header>
         <div className="border-b border-[#E5E7EB] bg-white px-4 py-3 sm:px-6 lg:px-8"><Breadcrumbs pathname={pathname} /></div>
