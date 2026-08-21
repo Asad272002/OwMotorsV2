@@ -65,9 +65,14 @@ export default async function AddBikeStockPage() {
                 <label className={adminLabelClass}>Sale price, PKR</label>
                 <input name="price" required type="number" min={0} step="1" className={adminInputClass} placeholder="285000" />
               </div>
-              <div>
+                            <div>
                 <label className={adminLabelClass}>Opening quantity</label>
-                <input name="quantity" required type="number" min={0} step="1" defaultValue={1} className={adminInputClass} />
+                <input name="quantity" required type="number" min={1} step="1" defaultValue={1} className={adminInputClass} />
+              </div>
+              <div className="md:col-span-2">
+                <label className={adminLabelClass}>Chasis numbers</label>
+                <textarea name="chasisNumbers" required className={adminInputClass + " min-h-28 py-3 font-mono"} placeholder="One chasis number per bike, one per line" />
+                <p className="mt-1 text-xs text-[#6B7280]">Quantity and chasis count must match.</p>
               </div>
               <div className="flex items-end rounded-md border border-[#E5E7EB] bg-[#F7F7F8] p-4 text-sm text-[#6B7280]">
                 <div className="flex items-start gap-3">
@@ -112,9 +117,14 @@ export default async function AddBikeStockPage() {
                     <label className={adminLabelClass}>Sale price, PKR</label>
                     <input name="price" required type="number" min={0} step="1" className={adminInputClass} placeholder="285000" />
                   </div>
-                  <div>
+                                    <div>
                     <label className={adminLabelClass}>Opening quantity</label>
-                    <input name="quantity" required type="number" min={0} step="1" defaultValue={1} className={adminInputClass} />
+                    <input name="quantity" required type="number" min={1} step="1" defaultValue={1} className={adminInputClass} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className={adminLabelClass}>Chasis numbers</label>
+                    <textarea name="chasisNumbers" required className={adminInputClass + " min-h-28 py-3 font-mono"} placeholder="One chasis number per bike, one per line" />
+                    <p className="mt-1 text-xs text-[#6B7280]">Quantity and chasis count must match.</p>
                   </div>
                   <div className="flex items-end rounded-md border border-[#E5E7EB] bg-[#F7F7F8] p-4 text-sm text-[#6B7280]">
                     <div className="flex items-start gap-3">

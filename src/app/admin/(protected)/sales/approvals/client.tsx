@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useActionState } from "react";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
-import { decideSale } from "@/app/admin/erp-actions/sales";
-import { CircleCheck, CircleX, ShieldCheck } from "lucide-react";
+import { decideSale, generateReceipt } from "@/app/admin/erp-actions/sales";
+import { CircleCheck, CircleX } from "lucide-react";
 
 type PendingApprovalSaleRow = {
   readonly id: string;
@@ -41,7 +41,6 @@ function RejectReasonDialog({
   onCancel: () => void;
 }>) {
   const reasonRef = useRef<HTMLInputElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (open) window.setTimeout(() => reasonRef.current?.focus(), 0);
   }, [open]);
@@ -65,7 +64,7 @@ function RejectReasonDialog({
           hideAutoSubmit={false}
           destructive={true}
           submitLabel="Confirm reject sale"
-          pendingLabel="Rejecting…"
+          pendingLabel="Rejecting..."
         >
           <input type="hidden" name="id" value={sale.id} />
           <input type="hidden" name="decision" value="rejected" />
@@ -78,7 +77,7 @@ function RejectReasonDialog({
               required
               minLength={3}
               maxLength={1000}
-              placeholder="e.g. Payment details incomplete, check chasis number, contact number looks wrong…"
+              placeholder="e.g. Payment details incomplete, check chasis number, contact number looks wrong..."
               className={adminInputClass}
             />
           </div>
@@ -95,6 +94,32 @@ function RejectReasonDialog({
   );
 }
 
+function ApproveSaleFollowUp({ sale }: Readonly<{ sale: PendingApprovalSaleRow }>) {
+  const [state, formAction, pending] = useActionState(decideSale, { status: "idle", message: "" });
+  if (state.status === "success") {
+    return (
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-[#15803D]">Approved. Generate the receipt now.</div>
+        <AdminForm action={generateReceipt} className="contents" hideAutoSubmit={true} submitLabel="Generate receipt" pendingLabel="Generating...">
+          <input type="hidden" name="saleId" value={sale.id} />
+          <button type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#111111] bg-[#111111] px-5 text-sm font-semibold text-white hover:bg-[#C62828] sm:w-auto">
+            <CircleCheck aria-hidden="true" className="h-4 w-4" />Generate receipt
+          </button>
+        </AdminForm>
+      </div>
+    );
+  }
+  return (
+    <form action={formAction} className="contents">
+      <input type="hidden" name="id" value={sale.id} />
+      <input type="hidden" name="decision" value="approved" />
+      <button type="submit" disabled={pending} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#C62828] bg-[#C62828] px-6 text-sm font-semibold text-white hover:bg-[#A91F1F] disabled:cursor-wait disabled:opacity-70 sm:w-auto">
+        <CircleCheck aria-hidden="true" className="h-4 w-4" />{pending ? "Approving..." : "Approve sale"}
+      </button>
+      {state.status === "error" && state.message ? <p className="text-xs font-semibold text-[#C62828]">{state.message}</p> : null}
+    </form>
+  );
+}
 export function SaleApprovalsClient({
   pendingSales,
 }: Readonly<{
@@ -172,19 +197,7 @@ export function SaleApprovalsClient({
                   >
                     <CircleX aria-hidden="true" className="h-4 w-4" />Reject sale…
                   </button>
-                  <AdminForm
-                    action={decideSale}
-                    className="contents"
-                    hideAutoSubmit={true}
-                    confirmMessage={`Approve sale ${s.receipt_number}? You will subtract ${s.quantity_label.replace(/^× /, "")} from stock, and the manager will be able to generate a receipt immediately.`}
-                    pendingLabel="Approving…"
-                  >
-                    <input type="hidden" name="id" value={s.id} />
-                    <input type="hidden" name="decision" value="approved" />
-                    <button type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-[#C62828] bg-[#C62828] px-6 text-sm font-semibold text-white hover:bg-[#A91F1F] sm:w-auto">
-                      <CircleCheck aria-hidden="true" className="h-4 w-4" />Approve sale (deduct stock, unlock receipt)
-                    </button>
-                  </AdminForm>
+                  <ApproveSaleFollowUp sale={s} />
                 </div>
               </div>
             );
@@ -199,4 +212,9 @@ export function SaleApprovalsClient({
     </>
   );
 }
+
+
+
+
+
 

@@ -22,14 +22,16 @@ OW Motors is a Next.js App Router project for a multi-brand motorcycle dealershi
 ## ERP Workflow Highlights
 
 - Sell Bike uses a guided checked workflow: bike/customer, payment, then approval submission.
-- Bike sales require live chasis uniqueness checks before Step 1 can complete.
-- Bike sales cannot proceed if selected stock is zero or requested quantity is above available stock.
+- Bike sales require selecting a real available chasis number from physical stock units before Step 1 can complete.
+- Bike sales cannot proceed if selected stock is zero, requested quantity is above available stock, or no available chasis unit exists.
 - Sale creation creates a pending record only after customer, chasis, stock, and payment checks pass.
 - Admin approval performs the final stock deduction and unlocks receipt generation.
 - Sell Spare Parts supports cart-style part selection, existing/new customer linking, payment method/bank reference, approval, stock deduction, and receipt generation.
 - All Sales shows bike and spare-part sales in one searchable register with type and status filters.
 - Customers can be searched by CNIC, phone, chasis, sale number, bike sale history, or spare-part SKU/name.
 - Stock Availability separates bike and spare-part availability into searchable modern tabs.
+- Bike stock additions require one chasis number per physical bike; sale approval marks the selected chasis unit sold, while rejection releases it back to available.
+- Spare parts support company SKU, carton number, category, compatible bike/model, compatible brand, and optional CC fitment for faster showroom lookup.
 
 ## Project Structure
 
@@ -89,6 +91,7 @@ Recent ERP migrations that must exist in the database:
 20260816020000_add_part_sales.sql
 20260816030000_link_part_sales_customers.sql
 20260816040000_part_sales_approval_payments.sql
+20260822010000_part_locations_and_bike_chasis_units.sql
 ```
 
 The generated TypeScript database types live in:
@@ -125,3 +128,4 @@ The build performs the production compile and TypeScript checks.
 - Use `next/image` for meaningful website images.
 - Do not copy the Figma/Vite reference as one large component.
 - Keep admin workflows auditable and avoid logging successful activity before the operation has actually succeeded.
+

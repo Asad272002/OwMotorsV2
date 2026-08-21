@@ -417,6 +417,50 @@ export type Database = {
           },
         ];
       };
+      motorcycle_stock_units: {
+        Row: {
+          id: string;
+          motorcycle_variant_id: string;
+          chasis_number: string;
+          status: "available" | "reserved" | "sold" | "archived";
+          sale_id: string | null;
+          added_by: string | null;
+          sold_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          motorcycle_variant_id: string;
+          chasis_number: string;
+          status?: "available" | "reserved" | "sold" | "archived";
+          sale_id?: string | null;
+          added_by?: string | null;
+          sold_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          motorcycle_variant_id?: string;
+          chasis_number?: string;
+          status?: "available" | "reserved" | "sold" | "archived";
+          sale_id?: string | null;
+          added_by?: string | null;
+          sold_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "motorcycle_stock_units_motorcycle_variant_id_fkey";
+            columns: ["motorcycle_variant_id"];
+            isOneToOne: false;
+            referencedRelation: "motorcycle_variants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       motorcycle_images: {
         Row: {
           alt_text: string;
@@ -811,6 +855,8 @@ export type Database = {
           unit_cost: number;
           compatible_brand_id: string | null;
           compatible_motorcycle_id: string | null;
+          compatible_cc: number | null;
+          carton_number: string | null;
           location: string | null;
           is_active: boolean;
           created_by: string;
@@ -829,6 +875,8 @@ export type Database = {
           unit_cost: number;
           compatible_brand_id?: string | null;
           compatible_motorcycle_id?: string | null;
+          compatible_cc?: number | null;
+          carton_number?: string | null;
           location?: string | null;
           is_active?: boolean;
           created_by: string;
@@ -847,6 +895,8 @@ export type Database = {
           unit_cost?: number;
           compatible_brand_id?: string | null;
           compatible_motorcycle_id?: string | null;
+          compatible_cc?: number | null;
+          carton_number?: string | null;
           location?: string | null;
           is_active?: boolean;
           created_by?: string;
@@ -1149,6 +1199,7 @@ export type Database = {
           receipt_number: string;
           customer_id: string;
           motorcycle_variant_id: string;
+          motorcycle_stock_unit_id: string | null;
           motorcycle_name_snapshot: string;
           brand_name_snapshot: string;
           color_name_snapshot: string | null;
@@ -1180,6 +1231,7 @@ export type Database = {
           receipt_number: string;
           customer_id: string;
           motorcycle_variant_id: string;
+          motorcycle_stock_unit_id?: string | null;
           motorcycle_name_snapshot: string;
           brand_name_snapshot: string;
           color_name_snapshot?: string | null;
@@ -1211,6 +1263,7 @@ export type Database = {
           receipt_number?: string;
           customer_id?: string;
           motorcycle_variant_id?: string;
+          motorcycle_stock_unit_id?: string | null;
           motorcycle_name_snapshot?: string;
           brand_name_snapshot?: string;
           color_name_snapshot?: string | null;
@@ -1501,3 +1554,6 @@ export type TablesInsert<TableNameOrOptions extends TableName> =
 
 export type TablesUpdate<TableNameOrOptions extends TableName> =
   PublicSchema["Tables"][TableNameOrOptions]["Update"];
+
+
+

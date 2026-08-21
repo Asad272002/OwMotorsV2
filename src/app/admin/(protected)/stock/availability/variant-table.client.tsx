@@ -29,15 +29,27 @@ export function VariantAdminEditorTable({
   archived = false,
   canArchive = false,
   brands = [],
+  stockUnits = [],
 }: {
   variants: VariantRowClient[];
   isApprentice: boolean;
   archived?: boolean;
   canArchive?: boolean;
   brands?: BrandOptionClient[];
+  stockUnits?: { id: string; motorcycle_variant_id: string; chasis_number: string; status: string }[];
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const chasisByVariant = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const unit of stockUnits) {
+      const list = map.get(unit.motorcycle_variant_id) ?? [];
+      list.push(unit.chasis_number);
+      map.set(unit.motorcycle_variant_id, list);
+    }
+    return map;
+  }, [stockUnits]);
+
   const filteredVariants = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return variants;
@@ -46,15 +58,16 @@ export function VariantAdminEditorTable({
       const brand = v.motorcycle?.brand?.name ?? "";
       const model = v.motorcycle?.name ?? "";
       const color = v.color_name ?? "";
-      const haystack = `${brand} ${model} ${v.cc} ${color} ${v.stock_status ?? ""}`.toLowerCase();
+      const haystack = `${brand} ${model} ${v.cc} ${color} ${v.stock_status ?? ""} ${(chasisByVariant.get(v.id) ?? []).join(" ")}`.toLowerCase();
       return haystack.includes(needle) || (!!numeric && String(v.cc).includes(numeric));
     });
-  }, [query, variants]);
+  }, [chasisByVariant, query, variants]);
 
   const hasActions = canArchive;
   const baseCols = 5;
+  const chasisCols = isApprentice ? 0 : 1;
   const colsNoApprentice = 2;
-  const colSpan = baseCols + (isApprentice ? 0 : colsNoApprentice) + (hasActions ? 1 : 0);
+  const colSpan = baseCols + chasisCols + (isApprentice ? 0 : colsNoApprentice) + (hasActions ? 1 : 0);
 
   return (
     <div className="space-y-4">
@@ -71,6 +84,7 @@ export function VariantAdminEditorTable({
             <th className="px-4 py-3">CC</th>
             <th className="px-4 py-3">Color</th>
             <th className="px-4 py-3">Status</th>
+            {!isApprentice ? <th className="px-4 py-3">Chasis numbers</th> : null}
             {!isApprentice ? <th className="px-4 py-3 text-right">Qty</th> : null}
             {!isApprentice ? <th className="px-4 py-3 text-right">Price</th> : null}
             {hasActions ? <th className="px-4 py-3 text-right whitespace-nowrap">Actions</th> : null}
@@ -89,6 +103,7 @@ export function VariantAdminEditorTable({
             const colorName = v.color_name ?? "";
             const colorHex = v.color_hex || "#111111";
             const label = `${v.motorcycle?.brand?.name ?? ""} ${modelName || "bike"} ${v.cc}cc ${colorName}`.replace(/\s+/g, " ").trim();
+            const chasisNumbers = chasisByVariant.get(v.id) ?? [];
             const rows: React.ReactElement[] = [];
 
             rows.push(
@@ -105,6 +120,7 @@ export function VariantAdminEditorTable({
                 <td className="px-4 py-3">
                   <StatusBadge value={archived ? "archived" : inStock ? "in_stock" : "out_of_stock"} label={archived ? "Archived" : inStock ? "In stock" : "Out of stock"} />
                 </td>
+                {!isApprentice ? <td className="px-4 py-3"><div className="flex max-w-xs flex-wrap gap-1">{chasisNumbers.length ? chasisNumbers.slice(0, 6).map((chasis) => <span key={chasis} className="rounded border border-[#E5E7EB] bg-[#F7F7F8] px-2 py-1 font-mono text-[10px] text-[#374151]">{chasis}</span>) : <span className="text-xs text-[#C62828]">No chasis units</span>}{chasisNumbers.length > 6 ? <span className="rounded border border-[#E5E7EB] px-2 py-1 text-[10px] text-[#6B7280]">+{chasisNumbers.length - 6}</span> : null}</div></td> : null}
                 {!isApprentice ? <td className="px-4 py-3 text-right font-display text-lg font-bold">{quantityValue}</td> : null}
                 {!isApprentice ? <td className="px-4 py-3 text-right font-display font-bold text-[#C62828]">PKR {priceValue.toLocaleString("en-PK")}</td> : null}
                 {hasActions ? (

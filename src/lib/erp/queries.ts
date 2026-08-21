@@ -8,7 +8,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import type {
   StaffProfile, Part, StockMovementWithDetails,
   Customer, Bank, Sale, SalePayment, SaleWithPayments, Receipt,
-  ActivityLog, CustomerPurchaseHistory, ReceiptPrintPayload, PartSale,
+  ActivityLog, CustomerPurchaseHistory, ReceiptPrintPayload, PartSale, MotorcycleStockUnit,
 } from "@/lib/erp/types";
 import type { StaffRole } from "@/lib/erp/types";
 
@@ -157,12 +157,12 @@ export const listPartsForApprentice = cache(async (): Promise<readonly (Omit<Par
   if (!supabase) return [];
   const { data } = await supabase
     .from("parts")
-    .select("id, sku, name, description, category, unit, location, is_active, current_stock")
+    .select("id, sku, name, description, category, unit, location, carton_number, compatible_cc, compatible_brand_id, compatible_motorcycle_id, is_active, current_stock")
     .or("is_active.eq.true,current_stock.gt.0")
     .order("name");
   return (data ?? []).map((p: Record<string, unknown>) => ({
     id: p.id, sku: p.sku, name: p.name, description: p.description,
-    category: p.category, unit: p.unit, location: p.location, is_active: p.is_active,
+    category: p.category, unit: p.unit, location: p.location, carton_number: p.carton_number, compatible_cc: p.compatible_cc, compatible_brand_id: p.compatible_brand_id, compatible_motorcycle_id: p.compatible_motorcycle_id, is_active: p.is_active,
     in_stock: Number(p.current_stock ?? 0) > 0
   }));
 });
@@ -347,6 +347,19 @@ export const listMotorcycleVariantsForSale = cache(async (): Promise<readonly {
     .order("cc", { ascending: true });
   type Row = Record<string, unknown>;
   return (data ?? []).filter((r: Row) => !!r.motorcycle);
+});
+export const listMotorcycleStockUnitsForSale = cache(async (): Promise<readonly MotorcycleStockUnit[]> => {
+  const actor = await getAuthenticatedProfile();
+  if (!actor || !["developer", "admin", "manager"].includes(actor.profile.role) || !actor.profile.is_active) return [];
+  const sb = privileged();
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("motorcycle_stock_units")
+    .select("id, motorcycle_variant_id, chasis_number, status, sale_id, added_by, sold_at, created_at, updated_at")
+    .eq("status", "available")
+    .order("chasis_number", { ascending: true });
+  if (error) return [];
+  return (data as MotorcycleStockUnit[]) ?? [];
 });
 
 type StockVariantRow = {
@@ -807,5 +820,7 @@ export async function getMyRole(): Promise<StaffRole | null> {
     .from("profiles").select("role").eq("id", userId).maybeSingle();
   return (profile?.role as StaffRole) ?? null;
 }
+
+
 
 

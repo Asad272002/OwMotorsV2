@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Bike, AlertTriangle } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-ui";
 import { getAuthenticatedProfile } from "@/lib/supabase/auth";
-import { listArchivedMotorcycleVariantsForStock, listMotorcycleVariantsForStock, listParts, listPartsForApprentice, listStockBrands } from "@/lib/erp/queries";
+import { listArchivedMotorcycleVariantsForStock, listMotorcycleVariantsForStock, listMotorcycleStockUnitsForSale, listParts, listPartsForApprentice, listStockBrands } from "@/lib/erp/queries";
 import type { BrandOptionClient, VariantRowClient } from "./variant-table.client";
 import type { PartAvailabilityRow } from "./parts-availability-table.client";
 import { StockAvailabilityBrowser } from "./stock-availability-browser.client";
@@ -21,10 +21,11 @@ export default async function StockAvailabilityPage() {
   type VariantRow = Awaited<ReturnType<typeof listMotorcycleVariantsForStock>>[number] & { quantity?: number | null };
   type PartRow = PartAvailabilityRow;
 
-  const [variants, archivedVariants, brands, partsRaw] = await Promise.all([
+  const [variants, archivedVariants, brands, stockUnits, partsRaw] = await Promise.all([
     listMotorcycleVariantsForStock() as unknown as Promise<VariantRow[]>,
     isApprentice ? Promise.resolve([] as VariantRow[]) : listArchivedMotorcycleVariantsForStock() as unknown as Promise<VariantRow[]>,
     isApprentice ? Promise.resolve([] as BrandOptionClient[]) : listStockBrands() as unknown as Promise<BrandOptionClient[]>,
+    isApprentice ? Promise.resolve([]) : listMotorcycleStockUnitsForSale(),
     (isApprentice ? listPartsForApprentice() : listParts()) as Promise<PartRow[]>,
   ]);
   const parts: PartRow[] = partsRaw;
@@ -72,6 +73,7 @@ export default async function StockAvailabilityPage() {
         canEditPrices={canEditPrices}
         canArchiveBikes={canArchiveBikes}
         brands={brands}
+        stockUnits={JSON.parse(JSON.stringify(stockUnits))}
       />
     </div>
   );

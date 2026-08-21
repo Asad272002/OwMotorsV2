@@ -48,8 +48,21 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [customerSearch, setCustomerSearch] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [partSearch, setPartSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [newCustomer, setNewCustomer] = useState({ fullName: "", cnic: "", phonePrimary: "", phoneSecondary: "", city: "", address: "" });
 
+    const categories = useMemo(() => Array.from(new Set(sellableParts.map((part) => String(part.category ?? "General").trim()).filter(Boolean))).sort(), [sellableParts]);
+  const filteredSellableParts = useMemo(() => {
+    const needle = partSearch.trim().toLowerCase();
+    return sellableParts.filter((part) => {
+      const categoryOk = categoryFilter === "all" || String(part.category ?? "").toLowerCase() === categoryFilter.toLowerCase();
+      if (!categoryOk) return false;
+      const fitment = `${part.compatible_motorcycle?.brand?.name ?? part.compatible_brand?.name ?? ""} ${part.compatible_motorcycle?.name ?? ""}`;
+      const haystack = `${part.sku} ${part.name} ${part.category ?? ""} ${part.carton_number ?? ""} ${part.location ?? ""} ${part.compatible_cc ?? ""} ${fitment}`.toLowerCase();
+      return !needle || haystack.includes(needle);
+    });
+  }, [categoryFilter, partSearch, sellableParts]);
   const byId = useMemo(() => new Map(sellableParts.map((part) => [part.id, part])), [sellableParts]);
   const filteredCustomers = useMemo(() => {
     const needle = customerSearch.trim().toLowerCase();
@@ -157,6 +170,19 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
         </div>
       </section>
 
+            <section className="rounded-lg border border-[#E5E7EB] bg-white p-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_14rem]">
+          <div className="relative">
+            <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+            <input value={partSearch} onChange={(event) => setPartSearch(event.target.value)} className={adminInputClass + " pl-10"} placeholder="Search SKU, carton, category, bike, CC..." />
+          </div>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className={adminInputClass + " mt-0"}>
+            <option value="all">All categories</option>
+            {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </div>
+      </section>
+
       <div className="overflow-hidden rounded-lg border border-[#E5E7EB]">
         <div className="grid grid-cols-[minmax(0,1.6fr)_7rem_9rem_9rem_3rem] gap-3 bg-[#F7F7F8] px-4 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B7280]"><span>Spare part</span><span>Qty</span><span>Unit price</span><span className="text-right">Line total</span><span /></div>
         <div className="divide-y divide-[#E5E7EB]">
@@ -166,7 +192,7 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
             const over = row.quantity > available || available <= 0;
             return (
               <div key={row.id} className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-[minmax(0,1.6fr)_7rem_9rem_9rem_3rem] md:items-start">
-                <div><select value={row.partId} onChange={(event) => selectPart(row.id, event.target.value)} className={adminInputClass + " mt-0"}><option value="">Select part</option>{sellableParts.map((partOption) => <option key={partOption.id} value={partOption.id}>{partOption.sku} - {partOption.name} ({partOption.current_stock ?? 0} in stock)</option>)}</select>{part ? <p className="mt-2 text-xs text-[#6B7280]">{part.category} | {part.compatible_motorcycle?.name ?? part.compatible_brand?.name ?? "Universal"}</p> : null}{over ? <p className="mt-2 text-xs font-semibold text-[#C62828]">Only {available} unit(s) available.</p> : null}</div>
+                <div><select value={row.partId} onChange={(event) => selectPart(row.id, event.target.value)} className={adminInputClass + " mt-0"}><option value="">Select part</option>{filteredSellableParts.map((partOption) => <option key={partOption.id} value={partOption.id}>{partOption.sku} - {partOption.name} | Carton {partOption.carton_number ?? "-"} | {partOption.compatible_cc ? `${partOption.compatible_cc}cc` : "All CC"} ({partOption.current_stock ?? 0} in stock)</option>)}</select>{part ? <p className="mt-2 text-xs text-[#6B7280]">{part.category} | Carton {part.carton_number ?? "-"} | {part.compatible_cc ? `${part.compatible_cc}cc` : "All CC"} | {part.compatible_motorcycle?.name ?? part.compatible_brand?.name ?? "Universal"}</p> : null}{over ? <p className="mt-2 text-xs font-semibold text-[#C62828]">Only {available} unit(s) available.</p> : null}</div>
                 <input type="number" min={1} max={Math.max(1, available)} value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: Math.max(1, Number(event.target.value) || 1) })} className={adminInputClass + " mt-0"} aria-label="Quantity" />
                 <input type="number" min={0} step="0.01" value={row.unitPrice} onChange={(event) => updateRow(row.id, { unitPrice: Math.max(0, Number(event.target.value) || 0) })} className={adminInputClass + " mt-0"} aria-label="Unit price" />
                 <div className="flex min-h-11 items-center justify-end rounded-md bg-[#F7F7F8] px-3 font-display text-xl font-bold text-[#111111]">{pkr(row.quantity * row.unitPrice)}</div>
@@ -186,3 +212,4 @@ export function PartSaleForm({ parts, customers, banks }: Readonly<{ parts: read
     </AdminForm>
   );
 }
+

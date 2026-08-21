@@ -64,6 +64,32 @@ async function activeVariantExists(sb: ReturnType<typeof serviceRoleClient>, mot
   if (result.error) return result.error;
   return (result.data?.length ?? 0) > 0;
 }
+function normalizeChasisNumbers(numbers: readonly string[]): string[] {
+  return Array.from(new Set(numbers.map((item) => String(item ?? "").trim().toUpperCase()).filter(Boolean)));
+}
+
+async function insertBikeStockUnits(
+  sb: ReturnType<typeof serviceRoleClient>,
+  variantId: string,
+  chasisNumbers: readonly string[],
+  actorUserId: string,
+): Promise<Error | null> {
+  const normalized = normalizeChasisNumbers(chasisNumbers);
+  if (normalized.length === 0) return null;
+  const existing = await sb.from("motorcycle_stock_units").select("chasis_number").in("chasis_number", normalized);
+  if (existing.error && existing.error.code !== "42P01" && existing.error.code !== "42703") return existing.error;
+  if ((existing.data?.length ?? 0) > 0) {
+    return new Error(`These chasis number(s) already exist: ${existing.data?.map((row) => (row as { chasis_number?: string }).chasis_number).filter(Boolean).join(", ")}`);
+  }
+  const rows: Database["public"]["Tables"]["motorcycle_stock_units"]["Insert"][] = normalized.map((chasis) => ({
+    motorcycle_variant_id: variantId,
+    chasis_number: chasis,
+    status: "available",
+    added_by: actorUserId,
+  }));
+  const inserted = await sb.from("motorcycle_stock_units").insert(rows);
+  return inserted.error ?? null;
+}
 // ==============================================
 // SIMPLE BIKE STOCK ENTRY (MANAGER+)
 // ==============================================
@@ -116,8 +142,15 @@ export async function createSimpleBikeStock(_prev: AdminActionState, formData: F
     is_default: true,
     is_active: true,
   };
-  const variantRes = await sb.from("motorcycle_variants").insert(variantInsert).select("id").maybeSingle();
+    const variantRes = await sb.from("motorcycle_variants").insert(variantInsert).select("id").maybeSingle();
   if (variantRes.error || !variantRes.data) return databaseAction("createSimpleBikeStock variant", variantRes.error ?? new Error("Bike variant was not created."));
+  const variantId = (variantRes.data as { id: string }).id;
+  const unitError = await insertBikeStockUnits(sb, variantId, parsed.data.chasisNumbers, actor.userId);
+  if (unitError) {
+    await sb.from("motorcycle_variants").delete().eq("id", variantId);
+    await sb.from("motorcycles").delete().eq("id", motorcycleId);
+    return databaseAction("createSimpleBikeStock chasis units", unitError);
+  }
 
   try {
     await writeActivity({
@@ -126,7 +159,7 @@ export async function createSimpleBikeStock(_prev: AdminActionState, formData: F
       action: "stock_applied",
       summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} added bike stock item ${brand.name} ${modelName} ${parsed.data.cc}cc ${parsed.data.colorName} with ${qty} unit(s).`,
       targetTable: "motorcycle_variants",
-      targetId: (variantRes.data as { id: string }).id,
+      targetId: variantId,
       metadata: {
         event: "bike_stock_created",
         brand_id: parsed.data.brandId,
@@ -186,8 +219,14 @@ export async function createBikeStockVariant(_prev: AdminActionState, formData: 
     is_default: false,
     is_active: true,
   };
-  const variantRes = await sb.from("motorcycle_variants").insert(variantInsert).select("id").maybeSingle();
+    const variantRes = await sb.from("motorcycle_variants").insert(variantInsert).select("id").maybeSingle();
   if (variantRes.error || !variantRes.data) return databaseAction("createBikeStockVariant", variantRes.error ?? new Error("Bike variant was not created."));
+  const variantId = (variantRes.data as { id: string }).id;
+  const unitError = await insertBikeStockUnits(sb, variantId, parsed.data.chasisNumbers, actor.userId);
+  if (unitError) {
+    await sb.from("motorcycle_variants").delete().eq("id", variantId);
+    return databaseAction("createBikeStockVariant chasis units", unitError);
+  }
   const syncError = await syncMotorcycleBasePrice(sb, parsed.data.motorcycleId);
   if (syncError) return databaseAction("createBikeStockVariant base price", syncError);
 
@@ -198,7 +237,7 @@ export async function createBikeStockVariant(_prev: AdminActionState, formData: 
       action: "stock_applied",
       summary: `${actor.profile.full_name || actor.userId.slice(0, 8)} added ${parsed.data.cc}cc ${colorName} variant to ${motorcycle.brand?.name ?? "Bike"} ${motorcycle.name} with ${qty} unit(s).`,
       targetTable: "motorcycle_variants",
-      targetId: (variantRes.data as { id: string }).id,
+      targetId: variantId,
       metadata: {
         event: "bike_stock_variant_created",
         brand_id: motorcycle.brand_id,
@@ -364,6 +403,8 @@ export async function createOrUpdatePart(_prev: AdminActionState, formData: Form
     reorder_level: parsed.data.reorderLevel, unit_cost: parsed.data.unitCost,
     compatible_brand_id: compatibleBrandId,
     compatible_motorcycle_id: compatibleMotorcycleId,
+    compatible_cc: parsed.data.compatibleCc,
+    carton_number: parsed.data.cartonNumber,
     location: parsed.data.location, is_active: true,
     created_by: actor.userId
   };
@@ -374,17 +415,21 @@ export async function createOrUpdatePart(_prev: AdminActionState, formData: Form
     void created_by;
     ({ error: err } = await supabase.from("parts").update(updateValues).eq("id", parsed.data.id));
     if (err?.code === "42703") {
-      const { compatible_brand_id, compatible_motorcycle_id, ...legacyValues } = updateValues;
+      const { compatible_brand_id, compatible_motorcycle_id, compatible_cc, carton_number, ...legacyValues } = updateValues;
       void compatible_brand_id;
       void compatible_motorcycle_id;
+      void compatible_cc;
+      void carton_number;
       ({ error: err } = await supabase.from("parts").update(legacyValues).eq("id", parsed.data.id));
     }
   } else {
     ({ error: err } = await supabase.from("parts").insert(values));
     if (err?.code === "42703") {
-      const { compatible_brand_id, compatible_motorcycle_id, ...legacyValues } = values;
+      const { compatible_brand_id, compatible_motorcycle_id, compatible_cc, carton_number, ...legacyValues } = values;
       void compatible_brand_id;
       void compatible_motorcycle_id;
+      void compatible_cc;
+      void carton_number;
       ({ error: err } = await supabase.from("parts").insert(legacyValues));
     }
   }
@@ -937,4 +982,6 @@ export async function archiveMotorcycleVariant(_prev: AdminActionState, formData
   return { status: "success", message: restore ? "Bike restored to stock workflows." : "Bike archived and hidden from stock workflows." };
 }
 // ==============================================
+
+
 

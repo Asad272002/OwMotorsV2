@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { AdminPageHeader, StatusBadge, adminInputClass, adminLabelClass } from "@/components/admin/admin-ui";
 import { AdminForm } from "@/components/admin/admin-form.client";
-import { checkChasisAvailability, initiateSale } from "@/app/admin/erp-actions/sales";
+import { initiateSale } from "@/app/admin/erp-actions/sales";
 
 const ERROR_INPUT_RING = "ring-2 ring-[#C62828]/70 border-[#C62828] focus:ring-[#C62828]";
 function joinMessages(msgs: readonly (string | null | undefined)[] | null | undefined): string {
@@ -42,7 +42,7 @@ const paymentMethods: { value: "cash" | "bank_transfer" | "cheque" | "demand_dra
 
 type PaymentRow = { id: string; payment_method: string; bank_id: string; amount: string; instrument_number: string; transaction_ref: string };
 type StepStatus = "complete" | "active" | "pending";
-type ChasisCheck = { status: "idle" | "checking" | "available" | "duplicate" | "error"; message: string; value: string };
+type StockUnit = { id: string; motorcycle_variant_id: string; chasis_number: string; status: "available" | "reserved" | "sold" | "archived"; };
 
 function pkr(n: number | string): string {
   const num = typeof n === "string" ? Number(n.replace(/[^0-9]/g, "")) || 0 : n;
@@ -130,9 +130,9 @@ function StepPanel({
   );
 }
 export default function NewSalePageClient(props: {
-  variants: Variant[]; banks: Bank[]; customers: Customer[]; myProfileId: string | null;
+  variants: Variant[]; stockUnits: StockUnit[]; banks: Bank[]; customers: Customer[]; myProfileId: string | null;
 }) {
-  const { variants, banks, customers } = props;
+  const { variants, stockUnits, banks, customers } = props;
 
   const [bikeFilter, setBikeFilter] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
@@ -140,8 +140,8 @@ export default function NewSalePageClient(props: {
   const [createNewCustomer, setCreateNewCustomer] = useState(false);
 
   const [variantId, setVariantId] = useState<string>("");
-  const [chasisNumber, setChasisNumber] = useState("");
-  const [chasisCheck, setChasisCheck] = useState<ChasisCheck>({ status: "idle", message: "Enter chasis number.", value: "" });
+  const [selectedStockUnitId, setSelectedStockUnitId] = useState("");
+  const [chasisSearch, setChasisSearch] = useState("");
   const [quantity, setQuantity] = useState<number>(1);
   const [saleNotes, setSaleNotes] = useState("");
 
@@ -160,15 +160,26 @@ export default function NewSalePageClient(props: {
     return [firstRow];
   });
 
+  const stockUnitsByVariant = useMemo(() => {
+    const map = new Map<string, StockUnit[]>();
+    for (const unit of stockUnits) {
+      if (unit.status !== "available") continue;
+      const existing = map.get(unit.motorcycle_variant_id) ?? [];
+      existing.push(unit);
+      map.set(unit.motorcycle_variant_id, existing);
+    }
+    return map;
+  }, [stockUnits]);
+
   const filteredVariants = useMemo(() => {
     const q = bikeFilter.trim().toLowerCase();
     let vs = variants;
     if (q) vs = vs.filter(v => {
-      const text = `${v.motorcycle?.brand?.name} ${v.motorcycle?.name} ${v.cc} ${v.color_name}`.toLowerCase();
+      const text = `${v.motorcycle?.brand?.name} ${v.motorcycle?.name} ${v.cc} ${v.color_name} ${(stockUnitsByVariant.get(v.id) ?? []).map((unit) => unit.chasis_number).join(" ")}`.toLowerCase();
       return text.includes(q);
     });
     return vs;
-  }, [bikeFilter, variants]);
+  }, [bikeFilter, stockUnitsByVariant, variants]);
 
   const chosen = useMemo(() => variants.find(v => v.id === variantId) ?? null, [variantId, variants]);
   const totalAmount = (chosen?.price ?? 0) * quantity;
@@ -190,8 +201,16 @@ export default function NewSalePageClient(props: {
     return customers.filter(c => `${c.full_name} ${c.cnic} ${c.phone_primary ?? ""}`.toLowerCase().includes(q)).slice(0, 20);
   }, [customerSearch, customers]);
 
-  const selectedCustomer = useMemo(() => customers.find(c => c.id === existingCustomerId) ?? null, [existingCustomerId, customers]);
-  const chasisReady = chasisNumber.trim().length >= 3 && chasisCheck.value === chasisNumber.trim().toUpperCase() && chasisCheck.status === "available";
+    const selectedCustomer = useMemo(() => customers.find(c => c.id === existingCustomerId) ?? null, [existingCustomerId, customers]);
+  const availableChasisUnits = useMemo(() => {
+    const q = chasisSearch.trim().toLowerCase();
+    const units = stockUnitsByVariant.get(variantId) ?? [];
+    if (!q) return units;
+    return units.filter((unit) => unit.chasis_number.toLowerCase().includes(q));
+  }, [chasisSearch, stockUnitsByVariant, variantId]);
+  const selectedStockUnit = useMemo(() => stockUnits.find((unit) => unit.id === selectedStockUnitId) ?? null, [selectedStockUnitId, stockUnits]);
+  const chasisNumber = selectedStockUnit?.chasis_number ?? "";
+  const chasisReady = Boolean(selectedStockUnit && selectedStockUnit.motorcycle_variant_id === variantId && selectedStockUnit.status === "available");
   const hasNewCustomerIdentity = newCustomer.fullName.trim().length >= 2 && newCustomer.cnic.replace(/\D/g, "").length === 13;
   const customerStepComplete = createNewCustomer ? hasNewCustomerIdentity : Boolean(selectedCustomer);
   const bikeStepComplete = Boolean(chosen && chasisReady && quantity > 0 && (chosen.quantity ?? 0) >= quantity);
@@ -211,19 +230,6 @@ export default function NewSalePageClient(props: {
     if (idx === visibleStep) return "active";
     return "pending";
   }) as [StepStatus, StepStatus, StepStatus];
-  useEffect(() => {
-    const value = chasisNumber.trim().toUpperCase();
-    if (value.length < 3) return;
-    const timer = window.setTimeout(() => {
-      void checkChasisAvailability(value).then((result) => {
-        setChasisCheck({ status: result.status, message: result.message, value });
-      }).catch(() => {
-        setChasisCheck({ status: "error", message: "Could not check chasis right now.", value });
-      });
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [chasisNumber]);
-
 
   function addPayment() {
     const newId = crypto.randomUUID();
@@ -252,11 +258,11 @@ export default function NewSalePageClient(props: {
     if (nextVariantId === variantId) return;
     setVariantId(nextVariantId);
     setQuantity(1);
-    setChasisNumber("");
-    setChasisCheck({ status: "idle", message: "Enter chasis number.", value: "" });
+    setSelectedStockUnitId("");
+    setChasisSearch("");
     setFormErrors((prev) => ({
       ...prev,
-      chasisNumber: ["Enter the chasis number for the newly selected bike."],
+      chasisNumber: ["Select a chasis number for the newly selected bike."],
       paymentsJson: paidAmount > 0 ? ["Review payment amount against the new bike total."] : [],
     }));
   }
@@ -356,11 +362,11 @@ export default function NewSalePageClient(props: {
       <StepPanel
         step={1}
         title="Bike & Customer"
-        description="Select the stock item, chasis number, and buyer."
+        description="Select a stock bike, reserved chasis number, and buyer."
         status={stepStates[0]}
         open={visibleStep === 0}
         delay={80}
-        actions={chosen ? <StatusBadge value={(chosen.quantity ?? 0) > 0 ? "in_stock" : "out_of_stock"} label={(chosen.quantity ?? 0) > 0 ? `In stock (${chosen.quantity})` : "Out of stock"} /> : undefined}
+        actions={chosen ? <StatusBadge value={(availableChasisUnits.length > 0 && (chosen.quantity ?? 0) > 0) ? "in_stock" : "out_of_stock"} label={(availableChasisUnits.length > 0 && (chosen.quantity ?? 0) > 0) ? `${availableChasisUnits.length} chasis ready` : "No chasis ready"} /> : undefined}
         summary={
           <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
             <p><span className="font-bold text-[#111111]">Bike:</span> {chosen ? `${chosen.motorcycle?.brand?.name ?? ""} ${chosen.motorcycle?.name ?? ""} ${chosen.cc}cc ${chosen.color_name ?? ""}`.trim() : "Not selected"}</p>
@@ -408,7 +414,8 @@ export default function NewSalePageClient(props: {
                 <p className="col-span-full rounded-md border border-dashed border-[#D1D5DB] p-4 text-center text-sm text-[#6B7280]">No variants match. Add variants to motorcycle inventory first.</p>
               ) : filteredVariants.map(v => {
                 const selected = v.id === variantId;
-                const available = (v.quantity ?? 0) > 0;
+                const chasisCount = stockUnitsByVariant.get(v.id)?.length ?? 0;
+                const available = (v.quantity ?? 0) > 0 && chasisCount > 0;
                 return (
                   <button key={v.id} type="button" disabled={!available} onClick={() => chooseVariant(v.id)} className={`flex min-h-[76px] items-start gap-3 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed ${selected ? "border-[#C62828] bg-[#FEF2F2] ring-2 ring-[#C62828]/15" : available ? "border-[#E5E7EB] bg-white hover:border-[#C62828]/50 hover:bg-[#FFF7F7]" : "border-[#E5E7EB] bg-[#FAFAFA]"} ${!available ? "opacity-60" : ""}`}>
                     <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${selected ? "bg-white text-[#C62828]" : "bg-[#F7F7F8] text-[#374151]"}`}>
@@ -419,7 +426,7 @@ export default function NewSalePageClient(props: {
                       <p className="mt-0.5 text-xs text-[#6B7280]">{v.cc}cc | {v.color_name ?? "Color not set"}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <span className="font-display text-sm font-bold text-[#C62828]">{pkr(v.price ?? 0)}</span>
-                        {available ? <span className="text-[10px] font-bold uppercase tracking-wider text-[#15803D]">{v.quantity} available</span> : <span className="text-[10px] font-bold uppercase tracking-wider text-[#C62828]">Sold out</span>}
+                        {available ? <span className="text-[10px] font-bold uppercase tracking-wider text-[#15803D]">{chasisCount} chasis ready</span> : <span className="text-[10px] font-bold uppercase tracking-wider text-[#C62828]">No chasis ready</span>}
                       </div>
                     </div>
                   </button>
@@ -430,10 +437,14 @@ export default function NewSalePageClient(props: {
 
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div>
-              <label htmlFor="newSale-chasisNumber" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
-              <input id="newSale-chasisNumber" data-error-path="chasisNumber" name="chasisNumber" value={chasisNumber ?? ""} onChange={e => { const next = e.target.value.toUpperCase(); const trimmed = next.trim(); setChasisNumber(next); setChasisCheck(trimmed.length < 3 ? { status: "idle", message: "Enter chasis number.", value: trimmed } : { status: "checking", message: "Checking chasis...", value: trimmed }); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "chasis_number", "motorcycleVariantId.chasisNumber") || chasisCheck.status === "duplicate" ? ERROR_INPUT_RING : chasisCheck.status === "available" ? "border-green-300 ring-2 ring-green-500/20" : ""}`} placeholder="e.g. MP125GP-2025-894321" />
-              {hasErr("chasisNumber", "chasis_number") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "chasis_number")}</div> : (
-                <div className={`mt-2 rounded-md border px-3 py-2 text-xs font-semibold ${chasisCheck.status === "available" ? "border-green-200 bg-green-50 text-[#15803D]" : chasisCheck.status === "duplicate" ? "border-[#FECACA] bg-[#FEF2F2] text-[#C62828]" : chasisCheck.status === "checking" ? "border-amber-200 bg-amber-50 text-[#B45309]" : "border-[#E5E7EB] bg-[#FAFAFA] text-[#6B7280]"}`}>{chasisCheck.message}</div>
+              <label htmlFor="newSale-chasisSearch" className={adminLabelClass}>Chasis number <span className="text-[#C62828]">*</span></label>
+              <input id="newSale-chasisSearch" value={chasisSearch} onChange={(event) => setChasisSearch(event.target.value.toUpperCase())} disabled={!chosen} className={adminInputClass} placeholder={chosen ? "Search available chasis..." : "Pick a bike first"} />
+              <select data-error-path="chasisNumber" value={selectedStockUnitId} onChange={(event) => { const id = event.target.value; setSelectedStockUnitId(id); setFormErrors((prev) => prev.chasisNumber ? { ...prev, chasisNumber: [] } : prev); }} required className={`${adminInputClass} ${hasErr("chasisNumber", "motorcycleStockUnitId") ? ERROR_INPUT_RING : chasisReady ? "border-green-300 ring-2 ring-green-500/20" : ""}`}>
+                <option value="">{chosen ? "Select available chasis" : "Pick a bike first"}</option>
+                {availableChasisUnits.map((unit) => <option key={unit.id} value={unit.id}>{unit.chasis_number}</option>)}
+              </select>
+              {hasErr("chasisNumber", "motorcycleStockUnitId") ? <div className="mt-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-xs font-semibold text-[#C62828]">{errText("chasisNumber", "motorcycleStockUnitId")}</div> : (
+                <div className={`mt-2 rounded-md border px-3 py-2 text-xs font-semibold ${chasisReady ? "border-green-200 bg-green-50 text-[#15803D]" : "border-amber-200 bg-amber-50 text-[#B45309]"}`}>{chosen ? (availableChasisUnits.length > 0 ? `${availableChasisUnits.length} available chasis number(s).` : "No available chasis registered for this bike.") : "Select a bike to view chasis numbers."}</div>
               )}
             </div>
             <div>
@@ -658,6 +669,7 @@ export default function NewSalePageClient(props: {
 
           {/* ===== Variant / Chasis / Qty / Price ===== */}
           <input type="hidden" name="motorcycleVariantId" value={variantId ?? ""} />
+          <input type="hidden" name="motorcycleStockUnitId" value={selectedStockUnitId ?? ""} />
           <input type="hidden" name="chasisNumber" value={chasisNumber ?? ""} />
           <input type="hidden" name="engineNumber" value="" />
           <input type="hidden" name="quantitySold" value={String(Number.isFinite(quantity) ? quantity : 1)} />
@@ -691,4 +703,7 @@ export default function NewSalePageClient(props: {
     </div>
   );
 }
+
+
+
 

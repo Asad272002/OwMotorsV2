@@ -24,7 +24,7 @@ export default async function PartsPage() {
       <AdminPageHeader
         eyebrow="Stock Management"
         title="Spare Parts Inventory"
-        description="Manage showroom spare parts. Stock quantities are NOT changed directly here — use Stock Changes to request additions/subtractions, which must be approved by Admin before inventory is updated."
+        description="Manage showroom spare parts with SKU, fitment, carton location, and reorder data."
         actions={(
           <div className="flex flex-wrap gap-2">
             <Link href="/admin/stock/part-sales" className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[#C62828] px-4 text-sm font-semibold text-white hover:bg-[#A91F1F]" style={{ color: "#FFFFFF" }}><span style={{ color: "#FFFFFF" }}>Sell parts</span></Link>
@@ -57,6 +57,7 @@ export default async function PartsPage() {
                 <th className="px-4 py-3 text-left">SKU</th>
                 <th className="px-4 py-3 text-left">Name</th>
                 <th className="px-4 py-3 text-left">Category</th>
+                <th className="px-4 py-3 text-left">Carton</th>
                 <th className="px-4 py-3 text-right">Qty</th>
                 <th className="px-4 py-3 text-right">Reorder</th>
                 <th className="px-4 py-3 text-right">Unit cost</th>
@@ -65,7 +66,7 @@ export default async function PartsPage() {
             </thead>
             <tbody className="divide-y divide-[#E5E7EB]">
               {parts.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-[#6B7280]">No parts yet. Add one below.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-[#6B7280]">No parts yet. Add one below.</td></tr>
               ) : parts.map(p => (
                 <tr key={p.id} className="hover:bg-[#FAFAFA] align-top">
                   <td className="px-4 py-3 font-mono text-xs">{p.sku}</td>
@@ -81,6 +82,7 @@ export default async function PartsPage() {
                     </p>
                   </td>
                   <td className="px-4 py-3 text-xs">{p.category ?? "-"}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[#374151]">{p.carton_number ?? "-"}</td>
                   <td className="px-4 py-3 text-right"><StatusBadge value={(p.current_stock ?? 0) <= (p.reorder_level ?? 0) && (p.current_stock ?? 0) !== 0 ? "needs_attention" : (p.current_stock ?? 0) === 0 ? "out_of_stock" : "in_stock"} label={String(p.current_stock ?? 0)} /></td>
                   <td className="px-4 py-3 text-right text-xs text-[#6B7280]">{p.reorder_level ?? "-"}</td>
                   <td className="px-4 py-3 text-right text-xs">PKR {(p.unit_cost ?? 0).toLocaleString("en-PK")}</td>
@@ -93,6 +95,7 @@ export default async function PartsPage() {
                           <div><label className={adminLabelClass}>SKU</label><input name="sku" defaultValue={p.sku} className={adminInputClass + " min-h-9 font-mono"} /></div>
                           <div><label className={adminLabelClass}>Name</label><input name="name" defaultValue={p.name} className={adminInputClass + " min-h-9"} /></div>
                           <div><label className={adminLabelClass}>Category</label><input name="category" defaultValue={p.category ?? ""} className={adminInputClass + " min-h-9"} placeholder="e.g. Engine, Electrical, Body" /></div>
+                          <div><label className={adminLabelClass}>Carton number</label><input name="cartonNumber" defaultValue={p.carton_number ?? ""} className={adminInputClass + " min-h-9 font-mono"} placeholder="e.g. C-12" /></div>
                           <div><label className={adminLabelClass}>Description</label><input name="description" defaultValue={p.description ?? ""} className={adminInputClass + " min-h-9"} /></div>
                           <div>
                             <label className={adminLabelClass}>Compatible bike/model</label>
@@ -101,6 +104,7 @@ export default async function PartsPage() {
                               {modelOptions.map(v => <option key={v.motorcycle_id} value={v.motorcycle_id}>{variantModelLabel(v)}</option>)}
                             </select>
                           </div>
+                          <div><label className={adminLabelClass}>Compatible CC</label><input name="compatibleCc" type="number" min={1} defaultValue={p.compatible_cc ?? ""} className={adminInputClass + " min-h-9"} placeholder="Optional" /></div>
                           <div className="grid grid-cols-2 gap-2">
                             <div><label className={adminLabelClass}>Reorder level</label><input name="reorderLevel" type="number" min={0} defaultValue={p.reorder_level ?? ""} className={adminInputClass + " min-h-9"} /></div>
                             <div><label className={adminLabelClass}>Unit cost (PKR)</label><input name="unitCost" type="number" min={0} defaultValue={p.unit_cost ?? ""} className={adminInputClass + " min-h-9"} /></div>
@@ -126,6 +130,7 @@ export default async function PartsPage() {
             <div><label className={adminLabelClass}>SKU (unique, uppercase)</label><input name="sku" required pattern="^[A-Z0-9][A-Z0-9\-_]{2,}$" className={adminInputClass + " font-mono"} placeholder="e.g. OWM-ENG-FLT-001" /></div>
             <div><label className={adminLabelClass}>Part name</label><input name="name" required className={adminInputClass} placeholder="e.g. Oil filter 150cc" /></div>
             <div><label className={adminLabelClass}>Category</label><input name="category" className={adminInputClass} placeholder="Engine / Electrical / Body / Tyres / Other" /></div>
+            <div><label className={adminLabelClass}>Carton number</label><input name="cartonNumber" className={adminInputClass + " font-mono"} placeholder="e.g. C-12" /></div>
             <div><label className={adminLabelClass}>Unit cost, PKR</label><input name="unitCost" type="number" min={0} step="0.01" className={adminInputClass} placeholder="0" /></div>
             <div>
               <label className={adminLabelClass}>Compatible bike/model</label>
@@ -134,6 +139,7 @@ export default async function PartsPage() {
                 {modelOptions.map(v => <option key={v.motorcycle_id} value={v.motorcycle_id}>{variantModelLabel(v)}</option>)}
               </select>
             </div>
+            <div><label className={adminLabelClass}>Compatible CC</label><input name="compatibleCc" type="number" min={1} className={adminInputClass} placeholder="Optional" /></div>
             <div className="md:col-span-2"><label className={adminLabelClass}>Description</label><textarea name="description" className={adminInputClass + " min-h-[72px]"} placeholder="Fitment, brand, packaging etc." /></div>
             <div><label className={adminLabelClass}>Reorder level (low stock alert)</label><input name="reorderLevel" type="number" min={0} className={adminInputClass} placeholder="5" /></div>
             <div className="flex items-end"><span className="text-xs text-[#6B7280]">Quantity starts at 0.</span></div>
@@ -143,4 +149,5 @@ export default async function PartsPage() {
     </div>
   );
 }
+
 

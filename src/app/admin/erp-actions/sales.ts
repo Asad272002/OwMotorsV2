@@ -143,6 +143,22 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
 
   const sb = serviceRoleClient();
 
+  const stockUnitRes = await sb
+    .from("motorcycle_stock_units")
+    .select("id, motorcycle_variant_id, chasis_number, status, sale_id")
+    .eq("id", parsed.data.motorcycleStockUnitId)
+    .maybeSingle();
+  if (stockUnitRes.error) return databaseAction("initiateSale load chasis unit", stockUnitRes.error);
+  if (!stockUnitRes.data) return { status: "error", message: "Select an available chasis number from stock.", errors: { chasisNumber: ["Pick a chasis number from the stock list."] } };
+  const stockUnit = stockUnitRes.data as { id: string; motorcycle_variant_id: string; chasis_number: string; status: string; sale_id?: string | null };
+  const saleChasisNumber = String(stockUnit.chasis_number ?? "").trim().toUpperCase();
+  if (stockUnit.motorcycle_variant_id !== parsed.data.motorcycleVariantId) {
+    return { status: "error", message: "Selected chasis does not belong to this bike variant.", errors: { chasisNumber: ["Pick a chasis listed under the selected bike."] } };
+  }
+  if (stockUnit.status !== "available") {
+    return { status: "error", message: `Chasis ${saleChasisNumber} is already ${stockUnit.status}.`, errors: { chasisNumber: ["Pick another available chasis number."] } };
+  }
+
   // 1. Determine customer (create new inline if needed)
   let customerId = "";
   if (parsed.data.useExistingCustomer) {
@@ -183,29 +199,26 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     }
   }
 
-  // 1b. Chasis number uniqueness (strict: across every row — sold, pending, rejected, completed; no duplicate ever allowed, prevents manager trying to resubmit same chasis as another sale)
-  const chasisNorm = String(parsed.data.chasisNumber ?? "").trim().toUpperCase();
-  if (chasisNorm.length >= 3) {
-    const chasisDup = await sb.from("sales").select("id,sale_status,receipt_number").ilike("chasis_number", chasisNorm).limit(3);
-    if (!chasisDup.error && chasisDup.data && chasisDup.data.length > 0) {
-      const firstRow = chasisDup.data[0] as unknown as { id: string; sale_status: string; receipt_number?: string | null };
-      const statusLabel: Record<string, string> = {
-        pending_approval: "pending approval",
-        approved: "approved (stock deducted)",
-        completed: "completed / receipt generated",
-        rejected: "rejected earlier",
-        cancelled: "cancelled",
-      };
-      return {
-        status: "error",
-        message: `Chasis already exists${firstRow.receipt_number ? ` in ${firstRow.receipt_number}` : ""}.`,
-        errors: {
-          chasisNumber: [
-            `Already used${firstRow.receipt_number ? ` in ${firstRow.receipt_number}` : ""}. Status: ${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}.`,
-          ],
-        },
-      };
-    }
+  // 1b. Chasis number uniqueness remains strict across all sale history.
+  const chasisDup = await sb.from("sales").select("id,sale_status,receipt_number").ilike("chasis_number", saleChasisNumber).limit(3);
+  if (!chasisDup.error && chasisDup.data && chasisDup.data.length > 0) {
+    const firstRow = chasisDup.data[0] as unknown as { id: string; sale_status: string; receipt_number?: string | null };
+    const statusLabel: Record<string, string> = {
+      pending_approval: "pending approval",
+      approved: "approved (stock deducted)",
+      completed: "completed / receipt generated",
+      rejected: "rejected earlier",
+      cancelled: "cancelled",
+    };
+    return {
+      status: "error",
+      message: `Chasis already exists${firstRow.receipt_number ? ` in ${firstRow.receipt_number}` : ""}.`,
+      errors: {
+        chasisNumber: [
+          `Already used${firstRow.receipt_number ? ` in ${firstRow.receipt_number}` : ""}. Status: ${statusLabel[String(firstRow.sale_status).toLowerCase()] ?? firstRow.sale_status}.`,
+        ],
+      },
+    };
   }
 
   // 2. Lookup variant snapshot
@@ -281,7 +294,8 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     color_name_snapshot: variant.color_name ?? null,
     color_hex_snapshot: variant.color_hex ?? null,
     cc_snapshot: variant.cc ?? null,
-    chasis_number: parsed.data.chasisNumber,
+    chasis_number: saleChasisNumber,
+    motorcycle_stock_unit_id: stockUnit.id,
     engine_number: parsed.data.engineNumber ?? null,
     quantity_sold: qty,
     unit_price: unitPrice,
@@ -294,6 +308,17 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   if (error) return databaseAction("initiateSale", error);
   const saleId = insertedSale?.id;
   if (!saleId) return { status: "error", message: "Sale creation failed (no id returned)." };
+  const reserveUnit = await sb
+    .from("motorcycle_stock_units")
+    .update({ status: "reserved", sale_id: saleId, updated_at: new Date().toISOString() })
+    .eq("id", stockUnit.id)
+    .eq("status", "available")
+    .select("id")
+    .maybeSingle();
+  if (reserveUnit.error || !reserveUnit.data) {
+    await sb.from("sales").delete().eq("id", saleId);
+    return { status: "error", message: `Chasis ${saleChasisNumber} was just reserved or sold. Pick another chasis number.`, errors: { chasisNumber: ["Pick another available chasis number."] } };
+  }
   let recordedPayments = 0;
   let paymentInsertFailed = false;
   const BANK_REQUIRED_METHODS: readonly PaymentMethod[] = ["bank_transfer", "cheque", "demand_draft", "pay_order", "card"];
@@ -340,6 +365,7 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
   if (paymentInsertFailed || recordedPayments !== payments.length) {
     try {
       await sb.from("sale_payments").delete().eq("sale_id", saleId);
+      await sb.from("motorcycle_stock_units").update({ status: "available", sale_id: null }).eq("id", stockUnit.id);
       await sb.from("sales").delete().eq("id", saleId);
     } catch { /* noop */ }
     return {
@@ -357,7 +383,8 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     motorcycle_name_snapshot: v.motorcycle?.name ?? "Unknown",
     cc_snapshot: (variant as unknown as { cc?: number | null }).cc ?? null,
     color_name_snapshot: (variant as unknown as { color_name?: string | null }).color_name ?? null,
-    chasis_number: parsed.data.chasisNumber,
+    chasis_number: saleChasisNumber,
+    motorcycle_stock_unit_id: stockUnit.id,
     total_amount: total,
     customer,
     customer_id: customerId,
@@ -368,7 +395,7 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
     actorUserId: actor.userId,
     actorRole: actor.profile.role,
     action: "sale_requested",
-    summary: `${actorName(actor)} submitted sale ${receiptNumber} for approval. ${saleBikeLabel(submittedSaleContext)} chasis ${parsed.data.chasisNumber}; customer ${customer?.full_name ?? customerId}; total PKR ${total.toLocaleString("en-PK")}; paid PKR ${pay.total.toLocaleString("en-PK")} across ${pay.count} payment split(s). Stock not deducted yet.`,
+    summary: `${actorName(actor)} submitted sale ${receiptNumber} for approval. ${saleBikeLabel(submittedSaleContext)} chasis ${saleChasisNumber}; customer ${customer?.full_name ?? customerId}; total PKR ${total.toLocaleString("en-PK")}; paid PKR ${pay.total.toLocaleString("en-PK")} across ${pay.count} payment split(s). Stock not deducted yet.`,
     targetTable: "sales",
     targetId: saleId,
     metadata: {
@@ -376,7 +403,7 @@ export async function initiateSale(_prev: AdminActionState, formData: FormData):
       outcome: "pending_admin_approval",
       actor: { id: actor.userId, name: actorName(actor), role: actor.profile.role },
       target_context: salesTargetContext(submittedSaleContext, { stock_effect: "none_until_approval" }),
-      sale: { id: saleId, receipt_number: receiptNumber, chasis_number: parsed.data.chasisNumber, motorcycle_variant_id: parsed.data.motorcycleVariantId, customer_id: customerId },
+      sale: { id: saleId, receipt_number: receiptNumber, chasis_number: saleChasisNumber, motorcycle_variant_id: parsed.data.motorcycleVariantId, customer_id: customerId },
       payment: { total_due: total, total_paid: pay.total, count: recordedPayments, methods: pay.methods },
       payments,
     },
@@ -469,14 +496,14 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
   const sb = serviceRoleClient();
   const now = new Date().toISOString();
   const saleFull = await sb.from("sales").select(`
-    id, receipt_number, sale_status, total_amount, requested_at, motorcycle_variant_id, quantity_sold,
+    id, receipt_number, sale_status, total_amount, requested_at, motorcycle_variant_id, motorcycle_stock_unit_id, quantity_sold,
     motorcycle_name_snapshot, brand_name_snapshot, cc_snapshot, color_name_snapshot, chasis_number,
     customer:customers(id, full_name, cnic),
     payments:sale_payments(id, amount, payment_method)
   `).eq("id", parsed.data.id).maybeSingle();
   if (saleFull.error || !saleFull.data) return { status: "error", message: "Sale not found." };
   const sale = saleFull.data as unknown as {
-    id: string; receipt_number: string; sale_status: string; total_amount: number; motorcycle_variant_id: string;
+    id: string; receipt_number: string; sale_status: string; total_amount: number; motorcycle_variant_id: string; motorcycle_stock_unit_id?: string | null;
     quantity_sold: number; motorcycle_name_snapshot: string; brand_name_snapshot: string; cc_snapshot: number;
     color_name_snapshot?: string | null; chasis_number: string;
     customer?: { id: string; full_name: string; cnic: string } | null;
@@ -530,11 +557,31 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
         errors: { rejectionReason: ["Update stock first, then approve this sale."] },
       };
     }
+    if (sale.motorcycle_stock_unit_id) {
+      const unitCheck = await sb
+        .from("motorcycle_stock_units")
+        .select("id, status, sale_id, chasis_number")
+        .eq("id", sale.motorcycle_stock_unit_id)
+        .maybeSingle();
+      if (unitCheck.error || !unitCheck.data) return databaseAction("decideSale load chasis unit", unitCheck.error ?? new Error("Chasis stock unit not found."));
+      const unit = unitCheck.data as { id: string; status?: string | null; sale_id?: string | null; chasis_number?: string | null };
+      if (unit.status !== "reserved" || unit.sale_id !== sale.id) {
+        return { status: "error", message: `Cannot approve: chasis ${unit.chasis_number ?? sale.chasis_number} is ${unit.status ?? "not reserved"}.`, errors: { rejectionReason: ["This chasis is not reserved for this sale."] } };
+      }
+    }
     const newQty = currentQty - qtySold;
     const prevStatus = ((beforeQty.data as unknown as { stock_status?: StockStatus | null }).stock_status ?? "in_stock") as StockStatus;
     const newStatus: StockStatus = (newQty <= 0 ? "out_of_stock" : (prevStatus === "out_of_stock" ? "in_stock" : prevStatus)) as StockStatus;
     const upd = await sb.from("motorcycle_variants").update({ quantity: newQty, stock_status: newStatus }).eq("id", sale.motorcycle_variant_id);
     if (upd.error) return databaseAction("deduct sale stock", upd.error);
+    if (sale.motorcycle_stock_unit_id) {
+      const unitSold = await sb
+        .from("motorcycle_stock_units")
+        .update({ status: "sold", sold_at: now, updated_at: now })
+        .eq("id", sale.motorcycle_stock_unit_id)
+        .eq("sale_id", sale.id);
+      if (unitSold.error) return databaseAction("mark chasis unit sold", unitSold.error);
+    }
     stockDeducted = { before: currentQty, after: newQty };
     if (sale.customer?.id && sale.chasis_number) {
       const custRow = await sb.from("customers").select("chasis_numbers").eq("id", sale.customer.id).maybeSingle();
@@ -549,6 +596,15 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
         }
       }
     }
+  }
+
+  if (parsed.data.decision === "rejected" && sale.motorcycle_stock_unit_id) {
+    const release = await sb
+      .from("motorcycle_stock_units")
+      .update({ status: "available", sale_id: null, updated_at: now })
+      .eq("id", sale.motorcycle_stock_unit_id)
+      .eq("sale_id", sale.id);
+    if (release.error) return databaseAction("release rejected chasis unit", release.error);
   }
 
   const update = (parsed.data.decision === "approved"
@@ -614,7 +670,7 @@ export async function decideSale(_prev: AdminActionState, formData: FormData): P
   }
 
   const decisionMessage = parsed.data.decision === "approved" && stockDeducted
-    ? `Sale ${sale.receipt_number} approved. Stock deducted (qty ${stockDeducted.before} -> ${stockDeducted.after}). Receipt auto-generated.`
+    ? `Sale ${sale.receipt_number} approved. Stock deducted (qty ${stockDeducted.before} -> ${stockDeducted.after}). Receipt is ready to generate.`
     : `Sale ${sale.receipt_number} rejected.`;
 
   revalidateERP();
@@ -827,3 +883,7 @@ export async function incrementReceiptPrint(_prev: AdminActionState, formData: F
   } catch { /* noop */ }
   return { status: "success", message: "Print recorded." };
 }
+
+
+
+

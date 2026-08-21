@@ -11,6 +11,13 @@ const nonNegativeInteger = z.coerce.number().int().min(0);
 const money = z.coerce.number().min(0).max(1_000_000_000);
 const seoTitle = optionalString(z.string().trim().min(10).max(70));
 const seoDescription = optionalString(z.string().trim().min(50).max(180));
+const chasisNumberList = z.preprocess((value) => {
+  if (typeof value !== "string") return [];
+  return value
+    .split(/[\r\n,]+/)
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+}, z.array(z.string().min(3).max(60).regex(/^[A-Z0-9][A-Z0-9 _/-]*$/, "Use alphanumeric chasis numbers only.")));
 
 export const loginSchema = z.object({
   email: z.string().trim().email("Enter a valid email address.").max(254),
@@ -95,7 +102,16 @@ export const simpleBikeStockSchema = z.object({
   colorName: z.string().trim().min(2, "Enter the color.").max(80),
   colorHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, "Use a valid HEX color."),
   price: money,
-  quantity: z.coerce.number().int().min(0).max(100000),
+  quantity: z.coerce.number().int().min(1, "Add at least one bike.").max(100000),
+  chasisNumbers: chasisNumberList,
+}).superRefine((value, ctx) => {
+  const unique = new Set(value.chasisNumbers.map((item) => item.toUpperCase()));
+  if (value.chasisNumbers.length !== value.quantity) {
+    ctx.addIssue({ code: "custom", path: ["chasisNumbers"], message: `Enter exactly ${value.quantity} chasis number(s), one for each bike.` });
+  }
+  if (unique.size !== value.chasisNumbers.length) {
+    ctx.addIssue({ code: "custom", path: ["chasisNumbers"], message: "Each chasis number must be unique." });
+  }
 });
 
 
@@ -105,7 +121,16 @@ export const simpleBikeVariantStockSchema = z.object({
   colorName: z.string().trim().min(2, "Enter the color.").max(80),
   colorHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, "Use a valid HEX color."),
   price: money,
-  quantity: z.coerce.number().int().min(0).max(100000),
+  quantity: z.coerce.number().int().min(1, "Add at least one bike.").max(100000),
+  chasisNumbers: chasisNumberList,
+}).superRefine((value, ctx) => {
+  const unique = new Set(value.chasisNumbers.map((item) => item.toUpperCase()));
+  if (value.chasisNumbers.length !== value.quantity) {
+    ctx.addIssue({ code: "custom", path: ["chasisNumbers"], message: `Enter exactly ${value.quantity} chasis number(s), one for each bike.` });
+  }
+  if (unique.size !== value.chasisNumbers.length) {
+    ctx.addIssue({ code: "custom", path: ["chasisNumbers"], message: "Each chasis number must be unique." });
+  }
 });
 export const simpleBikeStockEditSchema = z.object({
   variantId: uuid,
@@ -212,6 +237,12 @@ export const partSchema = z.object({
   }, z.coerce.number().min(0).max(1_000_000_000)),
   compatibleBrandId: uuid.optional().or(z.literal("")),
   compatibleMotorcycleId: uuid.optional().or(z.literal("")),
+  compatibleCc: z.preprocess((val) => {
+    if (val === null || val === undefined || val === "") return null;
+    const n = Number(String(val).replace(/[^0-9]/g, "") || "0");
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  }, z.number().int().positive().nullable()),
+  cartonNumber: optionalString(z.string().trim().min(1).max(80)),
   location: optionalString(z.string().trim().min(2).max(120)),
   isActive: checkbox,
 });
@@ -345,6 +376,7 @@ export const saleInitiateSchema = z.object({
   newCustomer_city: z.string().trim().min(2).max(80).optional().or(z.literal("")).default(""),
   newCustomer_address: z.string().trim().min(3).max(500).optional().or(z.literal("")).default(""),
   motorcycleVariantId: uuid,
+  motorcycleStockUnitId: uuid,
   chasisNumber: z.string().trim().min(3).max(60).regex(/^[A-Za-z0-9][A-Za-z0-9 _/-]*$/, "Use alphanumeric chasis number only."),
   engineNumber: optionalString(z.string().trim().min(3).max(60)),
   quantitySold: z.preprocess(
@@ -480,6 +512,7 @@ export const saleApprovalSchema = z.object({
 
 export const receiptGenerationSchema = z.object({ saleId: uuid });
 export const receiptPrintSchema = z.object({ receiptId: uuid });
+
 
 
 

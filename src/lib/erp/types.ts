@@ -42,6 +42,8 @@ export interface Part {
   readonly unit_cost: number;
   readonly compatible_brand_id?: string | null;
   readonly compatible_motorcycle_id?: string | null;
+  readonly compatible_cc?: number | null;
+  readonly carton_number?: string | null;
   readonly compatible_brand?: { readonly id: string; readonly name: string; readonly slug?: string | null } | null;
   readonly compatible_motorcycle?: { readonly id: string; readonly name: string; readonly slug?: string | null; readonly brand?: { readonly id: string; readonly name: string; readonly slug?: string | null } | null } | null;
   readonly location: string | null;
@@ -137,6 +139,18 @@ export interface StockMovement {
   [key: string]: unknown;
 }
 
+export interface MotorcycleStockUnit {
+  readonly id: string;
+  readonly motorcycle_variant_id: string;
+  readonly chasis_number: string;
+  readonly status: "available" | "reserved" | "sold" | "archived";
+  readonly sale_id: string | null;
+  readonly added_by: string | null;
+  readonly sold_at: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  [key: string]: unknown;
+}
 // --------------------
 // CUSTOMERS
 // --------------------
@@ -378,4 +392,6 @@ export interface ReceiptPrintPayload {
   readonly generated_at?: string;
   [key: string]: unknown;
 }
+
+
 
