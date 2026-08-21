@@ -832,7 +832,7 @@ export async function generateReceipt(_prev: AdminActionState, formData: FormDat
     });
   } catch { /* noop */ }
   revalidateERP();
-  return { status: "success", message: `Receipt ${receiptNumber} generated.`, data: { receiptNumber } };
+  return { status: "success", message: `Receipt ${receiptNumber} generated.`, data: { receiptId: receiptId ?? null, receiptNumber } };
 }
 
 export async function incrementReceiptPrint(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {

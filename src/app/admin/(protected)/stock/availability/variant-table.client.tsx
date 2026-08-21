@@ -37,6 +37,37 @@ function variantLabel(v: VariantRowClient): string {
   return `${v.motorcycle?.brand?.name ?? ""} ${v.motorcycle?.name ?? "bike"} ${v.cc}cc ${v.color_name ?? ""}`.replace(/\s+/g, " ").trim();
 }
 
+function ChasisCorrectionForm({ unit }: { unit: StockUnitClient }) {
+  const original = unit.chasis_number.trim().toUpperCase();
+  const [value, setValue] = useState(original);
+  const changed = value.trim().toUpperCase() !== original;
+
+  return (
+    <AdminForm
+      action={updateBikeChasisUnit}
+      hideAutoSubmit
+      className={`flex gap-2 rounded-md border p-2 transition-all ${changed ? "border-amber-300 bg-amber-50 shadow-[0_0_0_3px_rgb(245_158_11/0.12)]" : "border-transparent"}`}
+    >
+      <input type="hidden" name="unitId" value={unit.id} />
+      <input
+        name="chasisNumber"
+        required
+        value={value}
+        onChange={(event) => setValue(event.target.value.toUpperCase())}
+        className={`${adminInputClass} font-mono text-xs uppercase ${changed ? "border-amber-300 bg-white" : ""}`}
+      />
+      <button
+        type="submit"
+        disabled={!changed}
+        className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-md border px-3 text-xs font-semibold transition-colors ${changed ? "border-[#C62828] bg-[#C62828] text-white hover:bg-[#A91F1F]" : "border-[#D1D5DB] bg-white text-[#9CA3AF]"}`}
+      >
+        <Save aria-hidden="true" className="h-3.5 w-3.5" />
+        {changed ? "Save change" : "Saved"}
+      </button>
+    </AdminForm>
+  );
+}
+
 export function VariantAdminEditorTable({
   variants,
   isApprentice,
@@ -192,7 +223,7 @@ export function VariantAdminEditorTable({
                         <td className="px-4 py-3">{v.cc}cc</td>
                         <td className="px-4 py-3"><div className="flex items-center gap-2">{v.color_hex ? <span aria-hidden className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: v.color_hex }} /> : null}<span>{colorName || "Color TBD"}</span></div></td>
                         <td className="px-4 py-3"><StatusBadge value={archived ? "archived" : inStock ? "in_stock" : "out_of_stock"} label={archived ? "Archived" : inStock ? "In stock" : "Out of stock"} /></td>
-                        {!isApprentice ? <td className="px-4 py-3"><div className="flex max-w-xs flex-wrap gap-1">{available.length ? available.slice(0, 5).map((unit) => <span key={unit.id} className="rounded border border-green-200 bg-green-50 px-2 py-1 font-mono text-[10px] font-bold text-[#15803D]">{unit.chasis_number}</span>) : <span className="text-xs text-[#C62828]">No available chasis</span>}{available.length > 5 ? <span className="rounded border border-[#E5E7EB] px-2 py-1 text-[10px] text-[#6B7280]">+{available.length - 5}</span> : null}</div></td> : null}
+                        {!isApprentice ? <td className="px-4 py-3"><button type="button" onClick={() => { setChasisId(chasisOpen ? null : v.id); setEditingId(null); }} className={`inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-bold transition-colors ${available.length ? "border-green-200 bg-green-50 text-[#15803D] hover:bg-green-100" : "border-[#FECACA] bg-[#FEF2F2] text-[#C62828] hover:bg-red-100"}`}>{available.length ? `${available.length} ready` : "0 ready"}</button></td> : null}
                         {!isApprentice ? <td className="px-4 py-3 text-right"><span className={missing > 0 ? "font-bold text-[#C62828]" : "font-bold text-[#15803D]"}>{liveRecorded}/{quantityValue}</span></td> : null}
                         {!isApprentice ? <td className="px-4 py-3 text-right font-display text-lg font-bold">{quantityValue}</td> : null}
                         {!isApprentice ? <td className="px-4 py-3 text-right font-display font-bold text-[#C62828]">PKR {priceValue.toLocaleString("en-PK")}</td> : null}
@@ -258,11 +289,7 @@ export function VariantAdminEditorTable({
                                   <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#6B7280]">Correct available chasis</p>
                                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                                     {available.map((unit) => (
-                                      <AdminForm key={`${unit.id}-edit-chasis`} action={updateBikeChasisUnit} hideAutoSubmit className="flex gap-2">
-                                        <input type="hidden" name="unitId" value={unit.id} />
-                                        <input name="chasisNumber" required defaultValue={unit.chasis_number} className={`${adminInputClass} font-mono text-xs uppercase`} />
-                                        <button type="submit" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1 rounded-md border border-[#D1D5DB] bg-white px-3 text-xs font-semibold text-[#374151] hover:bg-[#F7F7F8]"><Save aria-hidden="true" className="h-3.5 w-3.5" />Save</button>
-                                      </AdminForm>
+                                      <ChasisCorrectionForm key={`${unit.id}-edit-chasis`} unit={unit} />
                                     ))}
                                   </div>
                                   <p className="mt-2 text-xs text-[#6B7280]">Only available, unsold chasis can be corrected. Sold or reserved chasis stay locked.</p>

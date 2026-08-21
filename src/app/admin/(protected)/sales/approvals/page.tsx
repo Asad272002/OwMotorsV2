@@ -1,8 +1,10 @@
 import { AdminPageHeader, AdminPanel, StatusBadge, adminInputClass } from "@/components/admin/admin-ui";
-import { listPendingPartSales, listPendingSales } from "@/lib/erp/queries";
+import { listPendingPartSales, listPendingSales, listSales } from "@/lib/erp/queries";
 import { SaleApprovalsClient } from "./client";
+import { ReceiptFollowUpList, type ReceiptFollowUpSale } from "./receipt-follow-up.client";
 import { AdminForm } from "@/components/admin/admin-form.client";
 import { decidePartSale } from "@/app/admin/erp-actions/stock";
+import { getAuthenticatedProfile } from "@/lib/supabase/auth";
 import { CircleCheck, ShieldCheck } from "lucide-react";
 
 export const metadata = { title: "Sale Approvals" };
@@ -12,7 +14,35 @@ function pkr(n: number | unknown): string {
 }
 
 export default async function SaleApprovalsPage() {
-  const [pending, pendingPartSales] = await Promise.all([listPendingSales(), listPendingPartSales()]);
+  const [actor, pending, pendingPartSales, allSales] = await Promise.all([
+    getAuthenticatedProfile(),
+    listPendingSales(),
+    listPendingPartSales(),
+    listSales(),
+  ]);
+  const canIssueReceipts = actor?.profile.role === "admin" || actor?.profile.role === "developer";
+  const receiptFollowUps: readonly ReceiptFollowUpSale[] = canIssueReceipts
+    ? allSales
+        .filter((sale) => sale.sale_status === "approved" && !sale.receipt_generated)
+        .slice(0, 5)
+        .map((sale) => {
+          const customer = (sale as unknown as { customer?: { full_name?: string | null; cnic?: string | null } | null }).customer ?? null;
+          return {
+            id: sale.id,
+            receipt_number: sale.receipt_number,
+            approved_at: sale.approved_at ?? null,
+            motorcycle_label: [
+              sale.brand_name_snapshot,
+              sale.motorcycle_name_snapshot,
+              sale.cc_snapshot ? `${sale.cc_snapshot}cc` : null,
+              sale.color_name_snapshot,
+            ].filter(Boolean).join(" "),
+            chasis_number: sale.chasis_number ?? null,
+            customer_label: customer?.full_name ?? customer?.cnic ?? "Walk-in customer",
+            total_amount: Number(sale.total_amount ?? 0),
+          };
+        })
+    : [];
 
   const shapedForClient = pending.map((s) => {
     type PaymentRow = { id: string; amount?: unknown; payment_method?: unknown; bank_name_snapshot?: string | null; bank?: { name?: string } | null };
@@ -104,7 +134,13 @@ export default async function SaleApprovalsPage() {
           </div>
         </AdminPanel>
       ) : null}
-      {pending.length === 0 && pendingPartSales.length === 0 ? (
+      {receiptFollowUps.length > 0 ? (
+        <AdminPanel title="Receipt follow-up" description="Approved bike sales waiting for official receipt generation.">
+          <ReceiptFollowUpList sales={receiptFollowUps} />
+        </AdminPanel>
+      ) : null}
+
+      {pending.length === 0 && pendingPartSales.length === 0 && receiptFollowUps.length === 0 ? (
         <AdminPanel title="Queue is empty">
           <div className="flex flex-col items-center gap-2 rounded-md border border-green-200 bg-green-50 px-6 py-12 text-center text-[#15803D]">
             <CircleCheck aria-hidden="true" className="h-10 w-10" />
@@ -112,9 +148,9 @@ export default async function SaleApprovalsPage() {
             <p className="text-sm opacity-80">No sales waiting.</p>
           </div>
         </AdminPanel>
-      ) : (
+      ) : pending.length > 0 ? (
         <SaleApprovalsClient pendingSales={shapedForClient} />
-      )}
+      ) : null}
     </div>
   );
 }
